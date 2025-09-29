@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Realtime Animal Detection (Web ⟷ Python)</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <style>
+        /* เต็มจอและ Responsive */
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            background: #000;
+            color: #fff;
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+        }
+
+        .stage {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
+        video,
+        canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ใช้ contain เพื่อให้สัดส่วนภาพเท่ากันสำหรับการซ้อน canvas */
+        video {
+            object-fit: contain;
+            background: #000;
+            transform: scaleX(-1);
+        }
+
+        /* mirror กล้องหน้าให้ดูธรรมชาติ */
+        #overlay {
+            pointer-events: none;
+        }
+
+        .hud {
+            position: fixed;
+            left: 12px;
+            bottom: 12px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            background: rgba(0, 0, 0, .45);
+            padding: 6px 10px;
+            border-radius: 10px;
+            backdrop-filter: blur(6px);
+            font-size: 12px;
+            line-height: 1.2;
+        }
+
+        .btn {
+            border: 1px solid #333;
+            background: #111;
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .btn:disabled {
+            opacity: .5;
+            cursor: not-allowed;
+        }
+
+        .badge {
+            padding: 2px 6px;
+            border-radius: 6px;
+            background: #1e1e1e;
+            border: 1px solid #2a2a2a;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            background: #b33;
+        }
+
+        .dot.on {
+            background: #3b3;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="stage">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+    </div>
+    <div class="hud">
+        <span class="badge"><span id="wsDot" class="dot"></span><span id="wsStatus">WS: disconnected</span></span>
+        <span class="badge">Cam: <span id="camInfo">—</span></span>
+        <span class="badge">Tx: <span id="sendFps">0</span> fps</span>
+        <span class="badge">Rx: <span id="recvFps">0</span> fps</span>
+        <span class="badge">Latency: <span id="lat">—</span> ms</span>
+        <button id="toggleBtn" class="btn">Start</button>
+        <button id="switchBtn" class="btn">Switch Cam</button>
+    </div>
+
+    <script>
+        /* =========================
+         * CONFIG (ปรับได้)
+         * ========================= */
+        const WS_DEFAULT = (() => {
+            // รองรับเปิดไฟล์จาก file:// โดย fallback ไป localhost:8000
+            const host = location.hostname || "localhost";
+            const proto = (location.protocol === "https:") ? "wss:" : "ws:";
+            return `${proto}//${host}:8001/ws`;  //=========================หมายเลขพอร์ต backend=========================
+        })();
+        const WS_URL = WS_DEFAULT;
+
+        // ขนาดเฟรมที่ส่งไป backend (ตั้งใจให้เล็กเพื่อไว) — จะรักษาอัตราส่วนภาพ
+        const MAX_SEND_WIDTH = 768; // 768 หรือ 640 ดีต่อ latency
+        const JPEG_QUALITY = 0.7;   // 0.5–0.8 ยิ่งต่ำยิ่งเล็ก/ไว
+
+        // เป้าหมายเฟรมเรตส่งขึ้นเซิร์ฟเวอร์ (ปล่อยให้ backend drop-frame เองได้ด้วย)
+        let TARGET_SEND_FPS = 20;
+
+        /* =========================
+         * DOM refs
+         * ========================= */
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const wsStatus = document.getElementById('wsStatus');
+        const wsDot = document.getElementById('wsDot');
+        const camInfo = document.getElementById('camInfo');
+        const sendFpsEl = document.getElementById('sendFps');
+        const recvFpsEl = document.getElementById('recvFps');
+        const latEl = document.getElementById('lat');
+        const toggleBtn = document.getElementById('toggleBtn');
+        const switchBtn = document.getElementById('switchBtn');
+
+        /* =========================
+         * State
+         * ========================= */
+        let ws;
+        let streaming = false;
+        let facing = 'environment'; // สลับได้: 'user' | 'environment'
+        let lastDraw = 0;
+        let lastSend = 0;
+        let sendCount = 0, recvCount = 0;
+        let boxes = []; // กล่องล่าสุดจาก backend
+        let lastLatency = null;
+
+        // ส่งเฟรมอยู่ไหม (กันส่งซ้อน)
+        let sendingNow = false;
+
+        // สำหรับคำนวณ fps ทุกๆ วินาที
+        setInterval(() => {
+            sendFpsEl.textContent = sendCount; sendCount = 0;
+            recvFpsEl.textContent = recvCount; recvCount = 0;
+            latEl.textContent = (lastLatency != null ? Math.round(lastLatency) : '—');
+        }, 1000);
+
+        /* =========================
+         * Camera
+         * ========================= */
+        async function openCamera() {
+            const constraints = {
+                audio: false,
+                video: {
+                    facingMode: facing,
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    frameRate: { ideal: 30, max: 60 }
+                }
+            };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+
+            const track = stream.getVideoTracks()[0];
+            const settings = track.getSettings ? track.getSettings() : {};
+            camInfo.textContent = `${settings.width || '?'}×${settings.height || '?'} @ ${settings.frameRate || '?'}fps`;
+
+            await video.play();
+            // ปรับขนาด overlay ให้ตรงกับขนาดแสดงผลจริงของ video (เพราะใช้ object-fit: contain)
+            resizeOverlay();
+        }
+
+        function stopCamera() {
+            const s = video.srcObject;
+            if (s) s.getTracks().forEach(t => t.stop());
+            video.srcObject = null;
+        }
+
+        function resizeOverlay() {
+            // ขนาด DOM จริง (หลัง responsive)
+            const rect = video.getBoundingClientRect();
+            overlay.width = Math.floor(rect.width);
+            overlay.height = Math.floor(rect.height);
+            overlay.style.left = rect.left + 'px';
+            overlay.style.top = rect.top + 'px';
+        }
+
+        /* =========================
+         * WebSocket
+         * ========================= */
+        function connectWS() {
+            ws = new WebSocket(WS_URL);
+            ws.binaryType = 'arraybuffer';
+            ws.onopen = () => {
+                wsStatus.textContent = `WS: connected`;
+                wsDot.classList.add('on');
+            };
+            ws.onclose = () => {
+                wsStatus.textContent = `WS: disconnected`;
+                wsDot.classList.remove('on');
+                // ลอง reconnect อัตโนมัติเมื่อหลุด
+                if (streaming) setTimeout(connectWS, 1200);
+            };
+            ws.onerror = () => {
+                wsStatus.textContent = `WS: error`;
+                wsDot.classList.remove('on');
+            };
+            ws.onmessage = (ev) => {
+                // ข้อมูลเป็น JSON: {boxes:[{x,y,w,h,cls,conf,label}], w, h, t_ms}
+                try {
+                    const msg = JSON.parse(ev.data);
+                    boxes = msg.boxes || [];
+                    lastLatency = msg.t_ms;
+                    recvCount++;
+                } catch (e) { }
+            };
+        }
+
+        /* =========================
+         * Streaming loop (ส่งเฟรม)
+         * ========================= */
+        const sendCanvas = document.createElement('canvas');
+        const sendCtx = sendCanvas.getContext('2d', { willReadFrequently: false });
+
+        function computeSendSize(vw, vh) {
+            if (!vw || !vh) return { w: 640, h: 360 };
+            const scale = Math.min(1, MAX_SEND_WIDTH / vw);
+            const w = Math.round(vw * scale);
+            const h = Math.round(vh * scale);
+            return { w, h };
+        }
+
+        async function sendOneFrame() {
+            if (!ws || ws.readyState !== 1) return;
+            if (!video.videoWidth || !video.videoHeight) return;
+            if (sendingNow) return; // ยัง encode ค้างอยู่
+
+            const now = performance.now();
+            const interval = 1000 / TARGET_SEND_FPS;
+            if ((now - lastSend) < interval) return;
+
+            sendingNow = true;
+            // ย่อภาพก่อนส่ง
+            const { w, h } = computeSendSize(video.videoWidth, video.videoHeight);
+            if (sendCanvas.width !== w || sendCanvas.height !== h) {
+                sendCanvas.width = w; sendCanvas.height = h;
+            }
+            sendCtx.drawImage(video, 0, 0, w, h);
+
+            // บีบอัดเป็น JPEG (binary)
+            sendCanvas.toBlob((blob) => {
+                sendingNow = false;
+                if (!blob) return;
+                lastSend = performance.now();
+
+                // แนบ timestamp สำหรับ latency วัดฝั่งเซิร์ฟเวอร์
+                const hdr = new TextEncoder().encode(JSON.stringify({ t0: lastSend }));
+                const hdrLen = new Uint32Array([hdr.byteLength]);
+
+                // ส่งแบบ [hdrLen(4 bytes) | hdr | jpegBytes]
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const jpegArr = new Uint8Array(reader.result);
+                    const packet = new Uint8Array(4 + hdr.byteLength + jpegArr.byteLength);
+                    packet.set(new Uint8Array(hdrLen.buffer), 0);
+                    packet.set(hdr, 4);
+                    packet.set(jpegArr, 4 + hdr.byteLength);
+                    try {
+                        ws.send(packet);
+                        sendCount++;
+                    } catch (e) { }
+                };
+                reader.readAsArrayBuffer(blob);
+            }, 'image/jpeg', JPEG_QUALITY);
+        }
+
+        // ใช้ requestVideoFrameCallback (ถ้ามี) เพื่อจังหวะที่พอดี
+        function startLoop() {
+            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+                const cb = () => {
+                    if (streaming) {
+                        sendOneFrame();
+                        video.requestVideoFrameCallback(cb);
+                    }
+                };
+                video.requestVideoFrameCallback(cb);
+            } else {
+                // fallback: setInterval
+                const id = setInterval(() => {
+                    if (!streaming) { clearInterval(id); return; }
+                    sendOneFrame();
+                }, 10);
+            }
+        }
+
+        /* =========================
+         * Draw loop (วาดกรอบ)
+         * ========================= */
+        function drawLoop() {
+            const ctx = overlay.getContext('2d');
+            const draw = (ts) => {
+                if (!streaming) return;
+                // ล้าง
+                ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+                // คำนวณสเกลจากวิดีโอจริง -> overlay (เพราะ object-fit: contain)
+                // เราจะวาดให้พิกัดตรงกับเฟรมที่ส่ง (สัดส่วนเดียวกัน)
+                const vw = video.videoWidth, vh = video.videoHeight;
+                const vwRatio = overlay.width / vw;
+                const vhRatio = overlay.height / vh;
+                const scale = Math.min(vwRatio, vhRatio);
+                const drawW = vw * scale, drawH = vh * scale;
+                const offX = (overlay.width - drawW) / 2;
+                const offY = (overlay.height - drawH) / 2;
+
+                // วาดกรอบ
+                const GLOBAL_OFFSET = { x: -500, y: 360 };   //กำหนดค่าชดเชยถ้าต้องการ
+                ctx.save();
+                ctx.translate(offX + GLOBAL_OFFSET.x, offY + GLOBAL_OFFSET.y);
+                ctx.scale(scale, scale);
+
+                ctx.lineWidth = 2 / scale;
+                ctx.font = `${14 / scale}px ui-sans-serif`;
+                ctx.strokeStyle = '#00FF88';
+                ctx.fillStyle = 'rgba(0,0,0,0.45)';
+
+                for (const b of boxes) {
+                    const { x, y, w, h, label, conf } = b;
+                    // กลับด้าน x (เพราะเรามี mirror ที่ video)
+                    const mx = vw - (x + w);
+                    ctx.beginPath();
+                    ctx.rect(mx, y, w, h);
+                    ctx.stroke();
+
+                    const tag = `${label ?? 'obj'} ${(conf * 100).toFixed(0)}%`;
+                    const tw = ctx.measureText(tag).width + 8;
+                    const th = 18 / scale + 6;
+                    ctx.fillRect(mx, y - th, tw, th);
+                    ctx.fillStyle = '#00FF88';
+                    ctx.fillText(tag, mx + 4, y - 6 / scale);
+                    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+                }
+                ctx.restore();
+
+                requestAnimationFrame(draw);
+            };
+            requestAnimationFrame(draw);
+        }
+
+        function drawLoop(ctx, box, canvasWidth, canvasHeight, videoWidth, videoHeight) {
+            // คำนวณอัตราส่วน scaling ระหว่าง video กับ canvas
+            const scaleX = canvasWidth / videoWidth;
+            const scaleY = canvasHeight / videoHeight;
+
+            // ตีกรอบให้ตรงตำแหน่งจริง (responsive)
+            const x = box.x * scaleX;
+            const y = box.y * scaleY;
+            const w = box.width * scaleX;
+            const h = box.height * scaleY;
+
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            ctx.save();
+            ctx.strokeStyle = "#10b981";
+            ctx.lineWidth = Math.max(2, canvasWidth * 0.005);
+            ctx.strokeRect(x, y, w, h);
+            ctx.restore();
+        }
+
+        /* =========================
+         * Controls
+         * ========================= */
+        toggleBtn.addEventListener('click', async () => {
+            if (!streaming) {
+                if (!navigator.mediaDevices?.getUserMedia) {
+                    alert('เบราว์เซอร์นี้ไม่รองรับกล้อง');
+                    return;
+                }
+                await openCamera();
+                connectWS();
+                streaming = true;
+                toggleBtn.textContent = 'Stop';
+                startLoop();
+                drawLoop();
+            } else {
+                streaming = false;
+                stopCamera();
+                if (ws) try { ws.close(); } catch { }
+                toggleBtn.textContent = 'Start';
+            }
+        });
+
+        switchBtn.addEventListener('click', async () => {
+            facing = (facing === 'environment') ? 'user' : 'environment';
+            if (streaming) {
+                await openCamera();
+            }
+        });
+
+        window.addEventListener('resize', resizeOverlay);
+    </script>
+</body>
+
+</html>

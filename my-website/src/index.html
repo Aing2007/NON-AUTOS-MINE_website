@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Voice ↔ LLM ↔ Voice (Minimal)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            background: #fff;
+            color: #222;
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+        }
+
+        .center-bottom {
+            position: fixed;
+            left: 50%;
+            bottom: 5%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0);
+            border-radius: 16px;
+            box-shadow: 0 2px 16px rgba(0, 0, 0, 0);
+            padding: 5px 10px;
+            min-width: 280px;
+            max-width: 90vw;
+            text-align: center;
+        }
+
+        .maintext {
+            font-size: clamp(10px, 4vw, 20px);
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #222;
+            min-height: 2em;
+        }
+
+        .status {
+            font-size: 0.5em;
+            opacity: .7;
+            margin-top: 8px;
+        }
+
+        video {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            z-index: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <video id="bgVideo" loop muted>
+        <source src="image/nonloopface.mp4" type="video/mp4">
+    </video>
+    <div class="center-bottom">
+        <div id="ttsText" class="maintext">—</div>
+        <div id="status" class="status">กรุณาอนุญาตไมโครโฟนเพื่อเริ่มต้น</div>
+    </div>
+    <script>
+        // ====== ตั้งค่า API ======
+        const OPENROUTER_API_KEY = "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";
+        const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+        const OPENROUTER_MODEL = "meta-llama/llama-4-maverick:free";
+
+        const ttsEl = document.getElementById("ttsText");
+        const statusEl = document.getElementById("status");
+        const videoEl = document.getElementById("bgVideo");
+
+        let speechRecognition = null;
+        let recognizing = false;
+        let speaking = false;
+
+        // ====== STT ======
+        function initSTT() {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) {
+                statusEl.textContent = "เบราว์เซอร์นี้ไม่รองรับ Web Speech API (STT)";
+                return;
+            }
+            const recog = new SR();
+            recog.lang = "th-TH";
+            recog.interimResults = true;
+            recog.continuous = true;
+
+            recog.onstart = () => {
+                recognizing = true;
+                statusEl.textContent = "กำลังฟัง พูดได้เลย";
+                pauseVideo();
+            };
+            recog.onerror = (e) => {
+                statusEl.textContent = "STT error: " + e.error;
+            };
+            recog.onend = () => {
+                recognizing = false;
+                statusEl.textContent = "หยุดฟังแล้ว";
+            };
+
+            let finalTranscript = "";
+            recog.onresult = (event) => {
+                if (speaking) return;
+                let interim = "";
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const res = event.results[i];
+                    if (res.isFinal) {
+                        finalTranscript += res[0].transcript.trim() + " ";
+                        askLLM(finalTranscript.trim());
+                        finalTranscript = "";
+                    } else {
+                        interim += res[0].transcript;
+                    }
+                }
+            };
+
+            speechRecognition = recog;
+        }
+
+        function startListening() {
+            if (!speechRecognition) initSTT();
+            if (!speechRecognition) return;
+            try {
+                speechRecognition.start();
+            } catch (e) { }
+        }
+
+        function stopListening() {
+            if (speechRecognition && recognizing) {
+                speechRecognition.stop();
+            }
+        }
+
+        // ====== Video control ======
+        function playVideo() {
+            if (videoEl) {
+                videoEl.loop = true;
+                videoEl.muted = true;
+                videoEl.play().catch(() => { });
+            }
+        }
+
+        function pauseVideo() {
+            if (videoEl) {
+                videoEl.pause();
+            }
+        }
+
+        // ====== LLM ======
+        async function askLLM(userText) {
+            statusEl.textContent = "กำลังถามผู้ช่วย...";
+            try {
+                const payload = {
+                    model: OPENROUTER_MODEL,
+                    messages: [
+                        { role: "system", content: "คุณคือน้อง NON ของโครงการ NON-AUTOS-MINE ที่สามารถพูดภาษาไทยได้อย่างเป็นธรรมชาติและคล่องแคล่ว ตอบคำถามอย่างกระชับและชัดเจน โดยโครงการนี้เน้นไปที่การติดตามพัฒนาการของเด็กออทิสติกผ่านการเล่นกิจกรรม" },
+                        { role: "user", content: userText }
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 512,
+                };
+
+                const headers = {
+                    "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                    "Content-Type": "application/json"
+                };
+
+                const res = await fetch(OPENROUTER_ENDPOINT, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(payload),
+                });
+
+                if (!res.ok) {
+                    const txt = await res.text().catch(() => "");
+                    throw new Error(`OpenRouter HTTP ${res.status} ${res.statusText} ${txt ? "- " + txt : ""}`);
+                }
+
+                const data = await res.json();
+                const ai = data?.choices?.[0]?.message?.content?.trim() || "(ไม่มีคำตอบ)";
+                speak(ai);
+            } catch (err) {
+                statusEl.textContent = "LLM error: " + err.message;
+                speak("ขอโทษค่ะ มีข้อผิดพลาดในการเรียกเอไอ");
+                speak(err.message);
+            }
+        }
+
+        // ====== TTS ======
+        function speak(text) {
+            if (!("speechSynthesis" in window)) {
+                ttsEl.textContent = text;
+                alert("เบราว์เซอร์นี้ไม่รองรับ Speech Synthesis (TTS)");
+                return;
+            }
+            try {
+                speaking = true;
+                stopListening();
+                ttsEl.textContent = text;
+                playVideo();
+
+                const utter = new SpeechSynthesisUtterance(text);
+                utter.lang = "th-TH";
+                utter.rate = 1;
+                utter.pitch = 1;
+
+                utter.onstart = () => statusEl.textContent = "กำลังอ่านคำตอบ…";
+                utter.onend = () => {
+                    speaking = false;
+                    statusEl.textContent = "อ่านจบแล้ว";
+                    pauseVideo();
+                    startListening();
+                };
+                utter.onerror = (e) => {
+                    speaking = false;
+                    statusEl.textContent = "TTS error: " + e.error;
+                    pauseVideo();
+                    startListening();
+                };
+
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(utter);
+            } catch (e) {
+                speaking = false;
+                statusEl.textContent = "TTS exception: " + e.message;
+                pauseVideo();
+            }
+        }
+
+        // ====== ขอไมค์ทันทีเมื่อโหลดหน้า ======
+        window.addEventListener("load", () => {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(() => {
+                    statusEl.textContent = "อนุญาตไมโครโฟนแล้ว กำลังฟัง...";
+                    startListening();
+                })
+                .catch(() => {
+                    statusEl.textContent = "กรุณาอนุญาตไมโครโฟนเพื่อใช้งาน";
+                });
+            pauseVideo();
+        });
+        document.body.addEventListener("click", () => {
+            window.location.href = "detectchild.html";
+        });
+    </script>
+</body>
+
+</html>
