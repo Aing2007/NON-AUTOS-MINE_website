@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Check Name (Web ⟷ Python @8000)</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <style>
+        /* ====== Layout พื้นฐาน ====== */
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            background: #fff;
+            color: #111;
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+        }
+
+        .stage {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+        }
+
+        header,
+        footer {
+            padding: 10px 14px;
+            background: #f6f7f8;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        footer {
+            border-top: 1px solid #e5e7eb;
+            border-bottom: none;
+        }
+
+        .content {
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* วิดีโอฉากหุ่น (เกริ่น/ปิด) */
+        .bgvideo {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            background: #000;
+            display: none;
+        }
+
+        /* โหมดเช็กชื่อ: กล้องสด + overlay + รูปกลาง */
+        .camwrap {
+            position: absolute;
+            inset: 0;
+            background: #fff;
+            display: none;
+        }
+
+        #video {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+            transform: scaleX(-1);
+        }
+
+        #overlay {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        /* ใจกลางหน้า (รูปสัตว์/ข้อความ) */
+        .center {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .animal-pic {
+            width: min(40vw, 280px);
+            height: auto;
+            border-radius: 14px;
+        }
+
+        .title {
+            font-size: clamp(18px, 2.8vw, 28px);
+            font-weight: 700;
+        }
+
+        .sub {
+            font-size: clamp(14px, 2vw, 20px);
+            color: #444;
+        }
+
+        /* ติ๊กถูกใหญ่กลางจอเมื่อ “ตรวจพบมือ” */
+        .bigcheck {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        .bigcheck .mark {
+            width: min(28vw, 220px);
+            height: min(28vw, 220px);
+            border-radius: 50%;
+            border: 6px solid #1db954;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: min(18vw, 160px);
+            color: #1db954;
+            background: #fff;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            animation: pop .28s ease-out;
+        }
+
+        @keyframes pop {
+            from {
+                transform: scale(0.8);
+                opacity: 0
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1
+            }
+        }
+
+        /* HUD เล็ก ๆ */
+        .hud {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: #111;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            border-radius: 8px;
+        }
+
+        /* ปุ่มดีบัก/ข้าม (optional) */
+        .actions {
+            margin-left: auto;
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn {
+            border: 1px solid #d1d5db;
+            background: #fff;
+            padding: 6px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        /* Overlay เริ่มต้นสำหรับปลดล็อก TTS */
+        .startmask {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .startbox {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(6px);
+            padding: 22px 26px;
+            border-radius: 14px;
+            text-align: center;
+        }
+
+        .startbox h2 {
+            margin: 0 0 8px 0;
+            font-weight: 700;
+        }
+
+        .startbtn {
+            margin-top: 10px;
+            padding: 10px 16px;
+            border-radius: 10px;
+            background: #4f46e5;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        /* Responsive tweaks */
+        @media (max-width: 640px) {
+            .animal-pic {
+                width: min(60vw, 260px);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="stage">
+        <header>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div class="hud">
+                    <span class="badge">ส่ง: <span id="tx">0</span> fps</span>
+                    <span class="badge">รับ: <span id="rx">0</span> fps</span>
+                    <span class="badge">Latency: <span id="lat">—</span> ms</span>
+                    <span class="badge">WS: <span id="ws">—</span></span>
+                    <span class="badge">Cam: <span id="cam">—</span></span>
+                </div>
+                <div class="actions">
+                    <!-- ปุ่มเหล่านี้เพื่อช่วยทดสอบบนหน้างาน (ไม่บังคับใช้) -->
+                    <button id="skip" class="btn">ข้ามคนนี้</button>
+                    <button id="replay" class="btn">เล่นเกริ่นอีกครั้ง</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="content">
+            <!-- Tap-to-start (ปลดล็อก TTS/Autoplay) -->
+            <div id="startMask" class="startmask">
+                <div class="startbox">
+                    <h2>แตะเพื่อเริ่ม</h2>
+                    <div>แตะปุ่มด้านล่างเพื่อเปิดเสียงพูด (TTS) และเริ่มเช็กชื่อ</div>
+                    <button id="startBtn" class="startbtn">Start</button>
+                </div>
+            </div>
+
+            <!-- ฉากวิดีโอ + เกริ่นพูด -->
+            <video id="faceVideo" class="bgvideo" src="./video/nonloopface.mp4" preload="auto" muted
+                playsinline></video>
+
+            <!-- โหมดเช็กชื่อ (กล้องสด + overlay + รูปสัตว์กลาง) -->
+            <div class="camwrap" id="camWrap">
+                <video id="video" autoplay playsinline muted></video>
+                <canvas id="overlay"></canvas>
+                <div class="center">
+                    <img id="animalImg" class="animal-pic" alt="">
+                    <div class="title" id="title"></div>
+                    <div class="sub" id="subtitle"></div>
+                </div>
+                <div class="bigcheck" id="bigcheck">
+                    <div class="mark">✓</div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <small>CheckName • ใช้โพรโตคอล WS เหมือนหน้า detectchild (binary JPEG + header JSON)</small>
+        </footer>
+    </div>
+
+    <script>
+        // =========================
+        // 0) CONFIG
+        // =========================
+
+        // ไฟล์สื่อ (ปรับ path ให้ตรงโครงสร้างโปรเจกต์ของคุณ)
+        const INTRO_VIDEO = "./video/nonloopface.mp4";                 // วิดีโอเกริ่น/ปิด (เล่นวนจน TTS จบ)
+        const CHECK_SFX = "./soundeffect/sonido-correcto-331225.mp3"; // เสียงเอฟเฟกต์เมื่อพบ "มือ"
+        const ICON_PATH = (label) => `./image/animal/${label}.png`;   // รูปไอคอนสัตว์กลางจอ
+
+        // ปลายทาง WS (พอร์ต 8000 สำหรับโมเดลมือ) — โปรโตคอลเดียวกับหน้าเดิม
+        const wsURL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws1';
+
+        // ทั่วไป
+        let PER_CHILD_TIMEOUT = 6.0;  // วินาที: รอการ "ยกมือ" ต่อหนึ่งคน
+        const TARGET_SEND_FPS = 18;
+        const JPEG_QUALITY = 0.7;
+        const MAX_SEND_WIDTH = 768;
+        const NEXT_URL = "game-start.html"; // ไปหน้าถัดไปอัตโนมัติเมื่อจบ (ถ้าต้องการ)
+
+        // mapping ชื่อที่จะพูด (อังกฤษล้วนตามที่กำหนด)
+        const TH_NAMES = {
+            pig: "pig", giraffe: "giraffe", cow: "cow", elephant: "elephant",
+            elephen: "elephant", elephent: "elephant",
+            lion: "lion", monkey: "monkey", panda: "panda",
+            penguin: "penguin", sheep: "sheep", tiger: "tiger"
+        };
+
+        // =========================
+        // 1) รับรายชื่อจาก detectchild (sessionStorage + query สำรอง)
+        // =========================
+        function getSelectedAnimals() {
+            try {
+                const s = sessionStorage.getItem('selectedAnimals');
+                if (s) {
+                    const arr = JSON.parse(s);
+                    if (Array.isArray(arr) && arr.length) return arr;
+                }
+            } catch { }
+            const usp = new URLSearchParams(location.search);
+            const sel = (usp.get('sel') || '').trim();
+            if (sel) return sel.split(',').map(x => x.trim()).filter(Boolean);
+            return [];
+        }
+        function labelToThai(label) { return TH_NAMES[label] || ("น้อง" + label); }
+        function buildIntroText(list) {
+            const n = list.length;
+            if (!n) return "today there is no one joining our activity.";
+            const names = list.map(labelToThai);
+            return `alright today we have ${n} person in our activity ,So we have ${names.join(" ")} right? So let's start checking names.`;
+        }
+
+        // =========================
+        // 2) Web Speech TTS (ของเว็บ)
+        // =========================
+        function speak(text, onend) {
+            try {
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = "en-US";
+                u.rate = 0.9;
+                u.pitch = 1.5;
+                u.onend = () => onend && onend();
+                speechSynthesis.cancel();
+                speechSynthesis.speak(u);
+                return true;
+            } catch (e) {
+                console.warn("TTS error:", e);
+                onend && onend();
+                return false;
+            }
+        }
+
+        // =========================
+        // 3) กล้อง + WS (พอร์ต 8000) — โปรโตคอลเดียวกับหน้าเดิม
+        // =========================
+        const videoEl = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const faceVideo = document.getElementById('faceVideo');
+        const txEl = document.getElementById('tx');
+        const rxEl = document.getElementById('rx');
+        const latEl = document.getElementById('lat');
+        const wsEl = document.getElementById('ws');
+        const camEl = document.getElementById('cam');
+
+        const camWrap = document.getElementById('camWrap');
+        const animalImg = document.getElementById('animalImg');
+        const titleEl = document.getElementById('title');
+        const subEl = document.getElementById('subtitle');
+        const bigcheck = document.getElementById('bigcheck');
+
+        const btnSkip = document.getElementById('skip');
+        const btnReplay = document.getElementById('replay');
+
+        const startMask = document.getElementById('startMask');
+        const startBtn = document.getElementById('startBtn');
+
+        let ws = null, streaming = false, sending = false;
+        let sendCount = 0, recvCount = 0, lastLatency = null;
+        let boxes = [];
+        let lastSend = 0;
+        const sendCanvas = document.createElement('canvas');
+        const sendCtx = sendCanvas.getContext('2d', { willReadFrequently: false });
+
+        // ทำ overlay คมบนจอ HiDPI (ไม่เปลี่ยนตำแหน่งด้วย left/top เพื่อเลี่ยง offset เพี้ยน)
+        function resizeOverlay() {
+            const rect = videoEl.getBoundingClientRect();
+            const dpr = Math.max(1, window.devicePixelRatio || 1);
+            const cssW = Math.floor(rect.width);
+            const cssH = Math.floor(rect.height);
+            overlay.style.width = cssW + 'px';
+            overlay.style.height = cssH + 'px';
+            if (overlay.width !== cssW * dpr || overlay.height !== cssH * dpr) {
+                overlay.width = cssW * dpr;
+                overlay.height = cssH * dpr;
+                overlay.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+        }
+        window.addEventListener('resize', resizeOverlay);
+
+        async function openCamera() {
+            const constraints = {
+                audio: false,
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 1920 }, height: { ideal: 1080 },
+                    frameRate: { ideal: 30, max: 60 }
+                }
+            };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            videoEl.srcObject = stream;
+            const track = stream.getVideoTracks()[0];
+            const s = track.getSettings ? track.getSettings() : {};
+            camEl.textContent = `${s.width || '?'}×${s.height || '?'} @ ${s.frameRate || '?'}fps`;
+            await videoEl.play();
+            resizeOverlay();
+        }
+
+        function computeSendSize(vw, vh) {
+            if (!vw || !vh) return { w: 640, h: 360 };
+            const scale = Math.min(1, MAX_SEND_WIDTH / vw);
+            return { w: Math.round(vw * scale), h: Math.round(vh * scale) };
+        }
+
+        function connectWS(url) {
+            ws = new WebSocket(url);
+            ws.binaryType = 'arraybuffer';
+            ws.onopen = () => { wsEl.textContent = "connected"; };
+            ws.onclose = () => { wsEl.textContent = "disconnected"; };
+            ws.onerror = () => { wsEl.textContent = "error"; };
+            ws.onmessage = (ev) => {
+                try {
+                    const msg = JSON.parse(ev.data);
+                    boxes = msg.boxes || [];
+                    lastLatency = (msg.client_latency_ms != null ? msg.client_latency_ms : msg.t_ms);
+                    recvCount++;
+                } catch { }
+            };
+        }
+
+        function sendOneFrame() {
+            if (!ws || ws.readyState !== 1) return;
+            if (!videoEl.videoWidth || !videoEl.videoHeight) return;
+            if (sending) return;
+
+            const now = performance.now();
+            const interval = 1000 / TARGET_SEND_FPS;
+            if ((now - lastSend) < interval) return;
+
+            sending = true;
+            const { w, h } = computeSendSize(videoEl.videoWidth, videoEl.videoHeight);
+            if (sendCanvas.width !== w || sendCanvas.height !== h) { sendCanvas.width = w; sendCanvas.height = h; }
+            sendCtx.drawImage(videoEl, 0, 0, w, h);
+
+            sendCanvas.toBlob((blob) => {
+                sending = false;
+                if (!blob) return;
+                lastSend = performance.now();
+
+                // header JSON + JPEG (เหมือนหน้าเดิม; little-endian uint32 header_len)
+                const hdr = new TextEncoder().encode(JSON.stringify({ t0: lastSend }));
+                const hdrLen = new Uint32Array([hdr.byteLength]);
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const jpegArr = new Uint8Array(reader.result);
+                    const packet = new Uint8Array(4 + hdr.byteLength + jpegArr.byteLength);
+                    packet.set(new Uint8Array(hdrLen.buffer), 0);
+                    packet.set(hdr, 4);
+                    packet.set(jpegArr, 4 + hdr.byteLength);
+                    try { ws.send(packet); sendCount++; } catch { }
+                };
+                reader.readAsArrayBuffer(blob);
+            }, 'image/jpeg', JPEG_QUALITY);
+        }
+
+        function startLoops() {
+            streaming = true;
+            // ส่งเฟรม
+            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+                const cb = () => { if (streaming) { sendOneFrame(); videoEl.requestVideoFrameCallback(cb); } };
+                videoEl.requestVideoFrameCallback(cb);
+            } else {
+                const id = setInterval(() => { if (!streaming) { clearInterval(id); return; } sendOneFrame(); }, 10);
+            }
+            // HUD
+            setInterval(() => {
+                txEl.textContent = sendCount; sendCount = 0;
+                rxEl.textContent = recvCount; recvCount = 0;
+                latEl.textContent = (lastLatency != null ? Math.round(lastLatency) : '—');
+            }, 1000);
+            // ลูปวาดกรอบ
+            drawLoop();
+        }
+
+        function drawLoop() {
+            const ctx = overlay.getContext('2d');
+            const draw = () => {
+                if (!streaming) return;
+                ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+                const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+                if (!vw || !vh) { requestAnimationFrame(draw); return; }
+
+                // คำนวณสเกล/offset ให้กรอบตรงกับภาพ (object-fit: contain)
+                const vwRatio = overlay.clientWidth / vw;
+                const vhRatio = overlay.clientHeight / vh;
+                const scale = Math.min(vwRatio, vhRatio);
+                const drawW = vw * scale, drawH = vh * scale;
+                const offX = (overlay.clientWidth - drawW) / 2;
+                const offY = (overlay.clientHeight - drawH) / 2;
+
+                ctx.save();
+                ctx.translate(offX, offY);
+                ctx.scale(scale, scale);
+
+                ctx.lineWidth = 2 / scale;
+                ctx.font = `${14 / scale}px ui-sans-serif`;
+                ctx.strokeStyle = '#00FF88';
+                ctx.fillStyle = 'rgba(0,0,0,0.45)';
+
+                for (const b of boxes) {
+                    const { x, y, w, h, label, conf } = b;
+                    // mirror ให้ตรงกับวิดีโอ (เหมือนหน้า detectchild)
+                    const mx = vw - (x + w);
+                    ctx.beginPath();
+                    ctx.rect(mx, y, w, h);
+                    ctx.stroke();
+
+                    const tag = `${label ?? 'obj'} ${((conf ?? 0) * 100 | 0)}%`;
+                    const tw = ctx.measureText(tag).width + 8;
+                    const th = 18 / scale + 6;
+                    ctx.fillRect(mx, y - th, tw, th);
+                    ctx.fillStyle = '#00FF88';
+                    ctx.fillText(tag, mx + 4, y - 6 / scale);
+                    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+                }
+                ctx.restore();
+
+                requestAnimationFrame(draw);
+            };
+            requestAnimationFrame(draw);
+        }
+
+        // ตรวจว่ามี “มือ” ไหม: ขยาย regex ให้ครอบคลุมขึ้น
+        function isHandDetected() {
+            for (const b of boxes) {
+                const lab = (b.label || "").toLowerCase();
+                if ((/(^|_|-)(hand|palm|raise|raised)(_|-|$)|hand\s*up|open\s*hand/.test(lab)) &&
+                    (b.conf == null || b.conf > 0.5)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // =========================
+        // 4) โฟลว์หลัก (ไม่มีการเขียน Firebase)
+        // =========================
+        let animals = getSelectedAnimals();
+
+        async function runIntro() {
+            // เปิดฉากวิดีโอ + พูดเกริ่น (วิดีโอจะ loop จนกว่าจะพูดจบ)
+            faceVideo.src = INTRO_VIDEO;
+            faceVideo.currentTime = 0;
+            faceVideo.loop = true;
+            faceVideo.style.display = 'block';
+            camWrap.style.display = 'none';
+            try { await faceVideo.play(); } catch { }
+
+            const introText = buildIntroText(animals);
+            await new Promise((res) => speak(introText, res));
+
+            // จบเกริ่น → เข้าสู่โหมดเช็กชื่อ
+            faceVideo.pause();
+            faceVideo.style.display = 'none';
+            camWrap.style.display = 'block';
+        }
+
+        async function runCheckFor(label) {
+            // ตั้งค่า UI กลางหน้า
+            animalImg.src = ICON_PATH(label);
+            animalImg.alt = label;
+            titleEl.textContent = labelToThai(label);
+            subEl.textContent = "Are you coming today? Please raise your hand.";
+
+            // พูดชื่อ
+            await new Promise((res) => speak(`${labelToThai(label)} Are you coming today? Please raise your hand.`, res));
+
+            // เริ่มกล้อง + WS (ครั้งแรกค่อยเปิด)
+            if (!videoEl.srcObject) {
+                await openCamera();
+                connectWS(wsURL);      // ✅ ใช้ตัวแปรที่ถูกต้อง
+                startLoops();
+            }
+
+            // เคลียร์สถานะ
+            bigcheck.style.display = 'none';
+
+            // นับเวลา
+            const t0 = performance.now();
+            const sfx = new Audio(CHECK_SFX);
+            sfx.preload = 'auto';
+
+            // รอจนกว่าจะ “พบมือ” หรือหมดเวลา → คืนค่า true/false
+            return await new Promise((resolve) => {
+                const tick = setInterval(() => {
+                    const dt = (performance.now() - t0) / 1000.0;
+                    if (isHandDetected()) {
+                        clearInterval(tick);
+                        // ✓ โชว์เครื่องหมายถูก + เสียง
+                        bigcheck.style.display = 'flex';
+                        try { sfx.currentTime = 0; } catch { }
+                        sfx.play().catch(() => { });
+                        resolve(true);
+                    } else if (dt >= PER_CHILD_TIMEOUT) {
+                        clearInterval(tick);
+                        resolve(false);
+                    }
+                }, 120); // เช็กทุก ~0.12s
+            });
+        }
+
+        async function runOutro() {
+            // วิดีโอ + พูดปิด
+            faceVideo.src = INTRO_VIDEO;
+            faceVideo.currentTime = 0;
+            faceVideo.loop = true;
+            faceVideo.style.display = 'block';
+            camWrap.style.display = 'none';
+            try { await faceVideo.play(); } catch { }
+
+            const outroText = "today we have finished checking names. let's proceed to the next activity.";
+            await new Promise((res) => speak(outroText, res));
+
+            // ไปหน้าถัดไป (ถ้าต้องการ)
+            // location.href = NEXT_URL;
+            location.href = "select.html";
+        }
+
+        // ปุ่มช่วยดีบัก
+        btnSkip.addEventListener('click', () => { PER_CHILD_TIMEOUT = 0.2; });
+        btnReplay.addEventListener('click', () => { runIntro(); });
+
+        // =============== Gesture unlock + main flow ===============
+        function warmupTTSThen(fn) {
+            try {
+                speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(' ');
+                u.lang = "en-US";
+                u.onend = () => fn && fn();
+                speechSynthesis.speak(u);
+            } catch {
+                fn && fn();
+            }
+        }
+
+        async function runFlow() {
+            await runIntro();
+            for (const label of animals) {
+                await runCheckFor(label);
+                await new Promise(r => setTimeout(r, 800));
+            }
+            await runOutro();
+        }
+
+        // เริ่มเมื่อผู้ใช้แตะ (ปลดล็อก TTS/Autoplay ตามนโยบายเบราว์เซอร์)
+        startBtn.addEventListener('click', () => {
+            startMask.style.display = 'none';
+            warmupTTSThen(() => { runFlow(); });
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Realtime Animal Detection (Web ⟷ Python)</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <style>
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            background: #000;
+            color: #fff;
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+        }
+
+        .stage {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
+        video,
+        canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        video {
+            object-fit: contain;
+            background: #000;
+            transform: scaleX(-1);
+            z-index: 1;
+            /* ✅ ให้ video อยู่ใต้ overlay เสมอ */
+        }
+
+        /* mirror กล้องหน้า */
+        #overlay {
+            pointer-events: none;
+            z-index: 2;
+            /* ✅ ซ้อนทับ video */
+            position: absolute;
+            inset: 0;
+        }
+
+        /* ===== Minimal HUD ===== */
+        .hud {
+            position: fixed;
+            left: 8px;
+            bottom: 5px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            background: rgba(0, 0, 0, .30);
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, .08);
+            font-size: 1vw;
+            line-height: 1.2;
+            height: 2.0vw;
+        }
+
+        .btn {
+            border: 1px solid #2b2b2b;
+            background: #111;
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1vw;
+        }
+
+        .btn:disabled {
+            opacity: .5;
+            cursor: not-allowed;
+        }
+
+        .badge {
+            padding: 2px 6px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, .04);
+            border: 1px solid rgba(255, 255, 255, .08);
+        }
+
+        .dot {
+            width: 1vw;
+            height: 1vw;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            background: #b33;
+        }
+
+        .dot.on {
+            background: #29c26f;
+        }
+
+        /* ===== Minimal Tray (ล่างซ้าย) ===== */
+        .tray {
+            position: fixed;
+            left: 12px;
+            bottom: 4.5vw;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            max-width: 80vw;
+            padding: 5px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.454);
+            border: 1px solid rgba(0, 0, 0, 0.498);
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .tray::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .tray::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+
+        .tray-item {
+            position: relative;
+            width: 5vw;
+            height: 5vw;
+            flex: 0 0 auto;
+            border-radius: 20%;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, .12);
+            cursor: pointer;
+            transition: transform .12s ease, border-color .12s ease, background .12s ease;
+            background: #ffffff;
+        }
+
+        .tray-item:hover {
+            transform: translateY(-1px);
+            border-color: rgba(4, 4, 4, 0.754);
+            background: #4c4c4c7e;
+        }
+
+        .tray-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .tray-item .tick {
+            position: absolute;
+            right: 6px;
+            top: 6px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, .5);
+            border: 1px solid #00ff88;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transform: scale(.9);
+            transition: opacity .12s ease, transform .12s ease;
+        }
+
+        .tray-item.selected .tick {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .tray-item .tick::after {
+            content: "✓";
+            font-size: 11px;
+            color: #00ff88;
+        }
+
+        .tray-item .label {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            text-align: center;
+            background: rgba(0, 0, 0, .45);
+            padding: 2px 4px;
+            font-size: 10px;
+            text-transform: lowercase;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+
+        /* ===== Minimal Next button (ล่างขวา) ===== */
+        .next-btn {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            height: 2vw;
+            background: #0a502f;
+            color: #000;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.2vw;
+            padding: 10px 10px;
+            border-radius: 10px;
+            border: 1px solid #169b1a;
+            transition: transform .1s ease, filter .1s ease;
+        }
+
+        .next-btn:hover {
+            transform: translateY(-1px);
+            filter: saturate(1.05);
+        }
+
+        #toggleBtn {
+            display: none;
+        }
+
+        /* เอาปุ่ม Start ออก */
+    </style>
+</head>
+
+<body>
+    <div class="stage">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+    </div>
+
+    <!-- ถาดไอคอน -->
+    <div class="tray" id="detectedTray" aria-label="Detected classes tray"></div>
+
+    <!-- HUD -->
+    <div class="hud">
+        <span class="badge"><span id="wsDot" class="dot"></span><span id="wsStatus">WS: disconnected</span></span>
+        <span class="badge">Cam: <span id="camInfo">—</span></span>
+        <span class="badge">Tx: <span id="sendFps">0</span> fps</span>
+        <span class="badge">Rx: <span id="recvFps">0</span> fps</span>
+        <span class="badge">Latency: <span id="lat">—</span> ms</span>
+        <button id="toggleBtn" class="btn">Start</button>
+        <button id="switchBtn" class="btn">Switch Cam</button>
+    </div>
+
+    <!-- ปุ่มถัดไป -->
+    <a href="checkname.html" id="nextBtn" class="next-btn">ถัดไป →</a>
+
+    <script>
+        /* =========================
+         * CONFIG
+         * ========================= */
+        const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws2';
+
+        // ฟังก์ชันหา path ไอคอนตาม label
+        function iconFor(label) {
+            return `./image/animal/${label}.png`;
+        }
+        const FALLBACK_ICONS = [
+            (label) => `./image/animal/${label}.png`,
+            () => `/Users/sutinan/Desktop/Project/NON-AUTOS-MINE(Overall)/my-website/src/image/pig.png`
+        ];
+
+        // ขนาดส่ง
+        const MAX_SEND_WIDTH = 768;
+        const JPEG_QUALITY = 0.7;
+        let TARGET_SEND_FPS = 20;
+
+        /* =========================
+         * DOM refs
+         * ========================= */
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const wsStatus = document.getElementById('wsStatus');
+        const wsDot = document.getElementById('wsDot');
+        const camInfo = document.getElementById('camInfo');
+        const sendFpsEl = document.getElementById('sendFps');
+        const recvFpsEl = document.getElementById('recvFps');
+        const latEl = document.getElementById('lat');
+        const switchBtn = document.getElementById('switchBtn');
+        const trayEl = document.getElementById('detectedTray');
+        const nextBtn = document.getElementById('nextBtn');
+
+        /* =========================
+         * State
+         * ========================= */
+        let ws;
+        let streaming = false;
+        let facing = 'environment';
+        let lastSend = 0;
+        let sendCount = 0, recvCount = 0;
+        let boxes = [];
+        let lastLatency = null;
+        let sendingNow = false;
+
+        // ✅ ขนาดภาพที่ฝั่งโมเดลใช้คำนวณกรอบ (ใช้เป็นระบบพิกัดอ้างอิง)
+        let srcW = null, srcH = null;
+
+        // เก็บ "จำนวนอ็อบเจ็กต์ต่อคลาสที่เห็นล่าสุด" + เวลาที่เห็น
+        const lastSeenCounts = new Map(); // label -> {count:int, t:number}
+        const HOLD_MS = 1500;
+        const selectedKeys = new Set();
+        const trayState = new Map();
+
+        // อัปเดตตัวเลขทุกวินาที
+        setInterval(() => {
+            sendFpsEl.textContent = sendCount; sendCount = 0;
+            recvFpsEl.textContent = recvCount; recvCount = 0;
+            latEl.textContent = (lastLatency != null ? Math.round(lastLatency) : '—');
+        }, 1000);
+
+        /* =========================
+         * Camera
+         * ========================= */
+        async function openCamera() {
+            const constraints = {
+                audio: false,
+                video: {
+                    facingMode: facing,
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    frameRate: { ideal: 30, max: 60 }
+                }
+            };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+
+            const track = stream.getVideoTracks()[0];
+            const settings = track.getSettings ? track.getSettings() : {};
+            camInfo.textContent = `${settings.width || '?'}×${settings.height || '?'} @ ${settings.frameRate || '?'}fps`;
+
+            await video.play();
+            resizeOverlay();
+        }
+        function stopCamera() {
+            const s = video.srcObject;
+            if (s) s.getTracks().forEach(t => t.stop());
+            video.srcObject = null;
+        }
+
+        /* ✅ ปรับขนาดแคนวาสตาม DPR + ตำแหน่งจริงของวิดีโอ */
+        function resizeOverlay() {
+            const rect = video.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+
+            overlay.style.left = rect.left + 'px';
+            overlay.style.top = rect.top + 'px';
+            overlay.style.width = rect.width + 'px';
+            overlay.style.height = rect.height + 'px';
+
+            overlay.width = Math.max(1, Math.round(rect.width * dpr));
+            overlay.height = Math.max(1, Math.round(rect.height * dpr));
+        }
+        /* ✅ อัปเดตอัตโนมัติเมื่อวิดีโอปรับขนาด */
+        new ResizeObserver(resizeOverlay).observe(video);
+
+        /* =========================
+         * WebSocket
+         * ========================= */
+        function connectWS() {
+            ws = new WebSocket(WS_URL);
+            ws.binaryType = 'arraybuffer';
+            ws.onopen = () => { wsStatus.textContent = `WS: connected`; wsDot.classList.add('on'); };
+            ws.onclose = () => { wsStatus.textContent = `WS: disconnected`; wsDot.classList.remove('on'); if (streaming) setTimeout(connectWS, 1200); };
+            ws.onerror = () => { wsStatus.textContent = `WS: error`; wsDot.classList.remove('on'); };
+            ws.onmessage = (ev) => {
+                try {
+                    const msg = JSON.parse(ev.data);
+
+                    // ✅ รองรับหลายรูปแบบผลลัพธ์
+                    let merged = [];
+                    if (Array.isArray(msg.boxes)) merged = merged.concat(msg.boxes);
+                    if (Array.isArray(msg.boxes_human)) merged = merged.concat(msg.boxes_human);
+                    if (Array.isArray(msg.boxes_animal)) merged = merged.concat(msg.boxes_animal);
+                    boxes = merged;
+
+                    // ✅ เก็บขนาดต้นทางจากเซิร์ฟเวอร์ (ใช้แม็พพิกัด)
+                    if (msg.w && msg.h) { srcW = msg.w; srcH = msg.h; }
+
+                    // นับจำนวนเพื่ออัปเดต tray (คงเดิม)
+                    const counts = {};
+                    for (const b of boxes) {
+                        const lab = b?.label;
+                        if (!lab) continue;
+                        counts[lab] = (counts[lab] || 0) + 1;
+                    }
+                    const now = performance.now();
+                    Object.entries(counts).forEach(([lab, c]) => {
+                        lastSeenCounts.set(lab, { count: c, t: now });
+                    });
+                    updateTrayPersistent(counts);
+
+                    lastLatency = msg.t_ms ?? msg.t_ms_total ?? null;
+                    recvCount++;
+                } catch (e) { }
+            };
+        }
+
+        /* =========================
+         * Streaming loop (ส่งเฟรม)
+         * ========================= */
+        const sendCanvas = document.createElement('canvas');
+        const sendCtx = sendCanvas.getContext('2d', { willReadFrequently: false });
+
+        function computeSendSize(vw, vh) {
+            if (!vw || !vh) return { w: 640, h: 360 };
+            const scale = Math.min(1, MAX_SEND_WIDTH / vw);
+            return { w: Math.round(vw * scale), h: Math.round(vh * scale) };
+        }
+        async function sendOneFrame() {
+            if (!ws || ws.readyState !== 1) return;
+            if (!video.videoWidth || !video.videoHeight) return;
+            if (sendingNow) return;
+
+            const now = performance.now();
+            const interval = 1000 / TARGET_SEND_FPS;
+            if ((now - lastSend) < interval) return;
+
+            sendingNow = true;
+            const { w, h } = computeSendSize(video.videoWidth, video.videoHeight);
+            if (sendCanvas.width !== w || sendCanvas.height !== h) { sendCanvas.width = w; sendCanvas.height = h; }
+            sendCtx.drawImage(video, 0, 0, w, h);
+
+            sendCanvas.toBlob((blob) => {
+                sendingNow = false;
+                if (!blob) return;
+                lastSend = performance.now();
+
+                const hdr = new TextEncoder().encode(JSON.stringify({ t0: lastSend }));
+                const hdrLen = new Uint32Array([hdr.byteLength]);
+
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const jpegArr = new Uint8Array(reader.result);
+                    const packet = new Uint8Array(4 + hdr.byteLength + jpegArr.byteLength);
+                    packet.set(new Uint8Array(hdrLen.buffer), 0);
+                    packet.set(hdr, 4);
+                    packet.set(jpegArr, 4 + hdr.byteLength);
+                    try { ws.send(packet); sendCount++; } catch (e) { }
+                };
+                reader.readAsArrayBuffer(blob);
+            }, 'image/jpeg', JPEG_QUALITY);
+        }
+        function startLoop() {
+            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+                const cb = () => { if (streaming) { sendOneFrame(); video.requestVideoFrameCallback(cb); } };
+                video.requestVideoFrameCallback(cb);
+            } else {
+                const id = setInterval(() => { if (!streaming) { clearInterval(id); return; } sendOneFrame(); }, 10);
+            }
+        }
+
+        /* =========================
+         * Draw loop (วาดกรอบ) — ✅ แม่นยำทุกขนาดจอ/DPR + mirror + contain
+         * ========================= */
+        function drawLoop() {
+            const ctx = overlay.getContext('2d');
+            const draw = () => {
+                if (!streaming) return;
+
+                const dpr = window.devicePixelRatio || 1;
+
+                // ล้างแคนวาสในพิกเซลจริง
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+                // ตั้ง 1 หน่วย = 1 CSS px
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                // ฐานพิกัดของกรอบ = ขนาดภาพที่ฝั่งโมเดลใช้ (fallback เป็น video)
+                const baseW = srcW || video.videoWidth;
+                const baseH = srcH || video.videoHeight;
+
+                const cssW = overlay.clientWidth;
+                const cssH = overlay.clientHeight;
+
+                if (!baseW || !baseH || !cssW || !cssH) { requestAnimationFrame(draw); return; }
+
+                // object-fit: contain ภายในพื้นที่ overlay (หน่วย CSS px)
+                const s = Math.min(cssW / baseW, cssH / baseH);
+                const drawW = baseW * s, drawH = baseH * s;
+                const offX = (cssW - drawW) / 2, offY = (cssH - drawH) / 2;
+
+                ctx.save();
+                ctx.translate(offX, offY);
+                ctx.scale(s, s);
+
+                ctx.lineWidth = 2 / s;
+                ctx.font = `${14 / s}px ui-sans-serif`;
+                ctx.strokeStyle = '#00FF88';
+                ctx.fillStyle = 'rgba(0,0,0,0.45)';
+
+                for (const b of boxes) {
+                    const { x, y, w, h, label, conf } = b;
+
+                    // วิดีโอถูก mirror (scaleX(-1)) → กลับแกน X ของกรอบ
+                    const mx = baseW - (x + w);
+
+                    ctx.beginPath();
+                    ctx.rect(mx, y, w, h);
+                    ctx.stroke();
+
+                    const tag = `${label ?? 'obj'} ${Math.round((conf || 0) * 100)}%`;
+                    const tw = ctx.measureText(tag).width + 8;
+                    const th = 18 / s + 6;
+                    ctx.fillRect(mx, y - th, tw, th);
+                    ctx.fillStyle = '#00FF88';
+                    ctx.fillText(tag, mx + 4, y - 6 / s);
+                    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+                }
+                ctx.restore();
+
+                requestAnimationFrame(draw);
+            };
+            requestAnimationFrame(draw);
+        }
+
+        /* =========================
+         * Tray render (แบบ persistent: ไม่รีสร้างใหม่ทุกรอบ)
+         * ========================= */
+        function updateTrayPersistent(counts) {
+            for (const [lab, need] of Object.entries(counts)) {
+                let state = trayState.get(lab);
+                if (!state) {
+                    state = { items: [] };
+                    trayState.set(lab, state);
+                }
+                while (state.items.length < need) {
+                    const idx = state.items.length;
+                    const key = `${lab}::${idx}`;
+
+                    const item = document.createElement('div');
+                    item.className = 'tray-item' + (selectedKeys.has(key) ? ' selected' : '');
+                    item.dataset.key = key;
+
+                    const img = document.createElement('img');
+                    let tried = 0;
+                    const trySrc = () => {
+                        if (tried >= FALLBACK_ICONS.length) return;
+                        img.src = FALLBACK_ICONS[tried++](lab);
+                    };
+                    img.onerror = trySrc; trySrc();
+
+                    const tick = document.createElement('div'); tick.className = 'tick';
+                    const cap = document.createElement('div'); cap.className = 'label'; cap.textContent = lab;
+
+                    item.appendChild(img);
+                    item.appendChild(tick);
+                    item.appendChild(cap);
+
+                    item.addEventListener('click', () => {
+                        if (selectedKeys.has(key)) selectedKeys.delete(key);
+                        else selectedKeys.add(key);
+                        item.classList.toggle('selected');
+                    });
+
+                    trayEl.appendChild(item);
+                    state.items.push(item);
+                }
+            }
+        }
+
+        function renderTray() {
+            const now = performance.now();
+            trayEl.innerHTML = '';
+            const currentKeys = new Set();
+
+            const entries = Array.from(lastSeenCounts.entries())
+                .filter(([lab, obj]) => now - obj.t < HOLD_MS)
+                .sort((a, b) => a[0].localeCompare(b[0]));
+
+            for (const [lab, obj] of entries) {
+                for (let i = 0; i < obj.count; i++) {
+                    const key = `${lab}::${i}`;
+                    currentKeys.add(key);
+
+                    const item = document.createElement('div');
+                    item.className = 'tray-item' + (selectedKeys.has(key) ? ' selected' : '');
+                    item.dataset.key = key;
+
+                    const img = document.createElement('img');
+                    let tried = 0;
+                    const trySrc = () => {
+                        if (tried >= FALLBACK_ICONS.length) return;
+                        img.src = FALLBACK_ICONS[tried++](lab);
+                    };
+                    img.onerror = trySrc;
+                    trySrc();
+
+                    const tick = document.createElement('div'); tick.className = 'tick';
+                    const cap = document.createElement('div'); cap.className = 'label'; cap.textContent = lab;
+
+                    item.appendChild(img);
+                    item.appendChild(tick);
+                    item.appendChild(cap);
+
+                    item.addEventListener('click', () => {
+                        if (selectedKeys.has(key)) selectedKeys.delete(key);
+                        else selectedKeys.add(key);
+                        item.classList.toggle('selected');
+                    });
+
+                    trayEl.appendChild(item);
+                }
+            }
+
+            for (const k of Array.from(selectedKeys)) {
+                if (!currentKeys.has(k)) selectedKeys.delete(k);
+            }
+        }
+
+        /* =========================
+         * Controls
+         * ========================= */
+        switchBtn.addEventListener('click', async () => {
+            facing = (facing === 'environment') ? 'user' : 'environment';
+            if (streaming) { await openCamera(); }
+        });
+        window.addEventListener('resize', resizeOverlay);
+        function getSelectedAnimalLabels() {
+            const labels = Array.from(selectedKeys).map(k => k.split('::')[0]);
+            return Array.from(new Set(labels));
+        }
+        const nextAudio = new Audio('/soundeffect/bubble-pop-04-323580.mp3');
+        nextAudio.preload = 'auto';
+        nextBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const selected = getSelectedAnimalLabels();
+            sessionStorage.setItem('selectedAnimals', JSON.stringify(selected));
+            const qs = new URLSearchParams({ sel: selected.join(',') }).toString();
+
+            try { nextAudio.currentTime = 0; } catch { }
+            nextAudio.play().catch(() => { }).finally(() => {
+                setTimeout(() => {
+                    window.location.href = `checkname.html?${qs}`;
+                }, 1);
+            });
+        });
+
+        /* =========================
+         * Auto-start เมื่อเข้าหน้า
+         * ========================= */
+        window.addEventListener('load', async () => {
+            try {
+                await openCamera();
+                connectWS();
+                streaming = true;
+                startLoop();
+                drawLoop();
+            } catch (e) {
+                alert('ไม่สามารถเข้าถึงกล้องได้: ' + (e?.message || e));
+            }
+        });
+    </script>
+</body>
+
+</html>

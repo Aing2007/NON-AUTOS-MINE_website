@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8" />
+    <title>เลือกอารมณ์</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            background: #F9D3D2;
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+        }
+
+        .center {
+            min-height: 100vh;
+            width: 100vw;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .mainbox {
+            width: 100%;
+            max-width: 562px;
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+
+        .circle-img {
+            max-width: 100%;
+            width: min(90vw, 562px);
+            height: auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+            user-select: none;
+            pointer-events: none;
+            border-radius: 100%;
+            transition: transform 0.3s cubic-bezier(.68, -0.55, .27, 1.55);
+        }
+
+        .mainbox.shake .circle-img {
+            animation: shake 0.5s cubic-bezier(.68, -0.55, .27, 1.55);
+        }
+
+        @keyframes shake {
+
+            10%,
+            90% {
+                transform: translateX(-2px);
+            }
+
+            20%,
+            80% {
+                transform: translateX(4px);
+            }
+
+            30%,
+            50%,
+            70% {
+                transform: translateX(-8px);
+            }
+
+            40%,
+            60% {
+                transform: translateX(8px);
+            }
+        }
+
+        .overlay-grid {
+            position: absolute;
+            left: 9%;
+            top: 9%;
+            width: 82%;
+            height: 82%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 0;
+        }
+
+        .emotion-btn {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: none;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            border-radius: 18px;
+            transition: box-shadow 0.15s, transform 0.18s;
+        }
+
+        .emotion-btn:focus,
+        .emotion-btn:hover {
+            box-shadow: 0 0 0 6px #fff7;
+            z-index: 2;
+            transform: scale(1.08);
+        }
+
+        .emotion-btn .sr-only {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .emotion-label {
+            pointer-events: none;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #d946ef;
+            opacity: 0;
+            transition: opacity 0.18s;
+            text-shadow: 0 2px 12px #fff8;
+            letter-spacing: 1px;
+        }
+
+        .emotion-btn:focus .emotion-label,
+        .emotion-btn:hover .emotion-label {
+            opacity: 1;
+        }
+
+        .glow {
+            pointer-events: none;
+            position: absolute;
+            left: -4%;
+            top: -4%;
+            width: 108%;
+            height: 108%;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0);
+            transition: background 0.2s;
+            filter: blur(32px);
+        }
+
+        .mainbox:hover .glow {
+            background: rgba(255, 255, 255, 0.10);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #fff;
+            color: #d946ef;
+            font-weight: 600;
+            padding: 16px 32px;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(220, 38, 120, 0.08);
+            font-size: 1.2em;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            z-index: 9999;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+
+        /* Particle effect */
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+            opacity: 0.7;
+            z-index: 99;
+            animation: particle-float 0.7s linear forwards;
+        }
+
+        @keyframes particle-float {
+            to {
+                transform: translateY(-60px) scale(0.7);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="center">
+        <div class="mainbox" id="mainbox">
+            <img src="image/circle.png" alt="คอลเลคชันตัวการ์ตูน 4 อารมณ์" class="circle-img" draggable="false" />
+            <div class="overlay-grid">
+                <button class="emotion-btn" data-feeling="happy" aria-label="เปิดหน้า สุขใจ">
+                    <span class="sr-only">สุขใจ</span>
+                    <span class="emotion-label">😊 สุขใจ</span>
+                </button>
+                <button class="emotion-btn" data-feeling="sad" aria-label="เปิดหน้า เสียใจ">
+                    <span class="sr-only">เสียใจ</span>
+                    <span class="emotion-label">😢 เสียใจ</span>
+                </button>
+                <button class="emotion-btn" data-feeling="calm" aria-label="เปิดหน้า อ่อนหวาน">
+                    <span class="sr-only">อ่อนหวาน</span>
+                    <span class="emotion-label">😌 อ่อนหวาน</span>
+                </button>
+                <button class="emotion-btn" data-feeling="angry" aria-label="เปิดหน้า จริงจัง">
+                    <span class="sr-only">จริงจัง</span>
+                    <span class="emotion-label">😠 จริงจัง</span>
+                </button>
+            </div>
+            <div class="glow"></div>
+        </div>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script>
+        // Feelings mapping
+        const feelings = {
+            happy: "สุขใจ",
+            sad: "เสียใจ",
+            calm: "อ่อนหวาน",
+            angry: "จริงจัง"
+        };
+
+        // Particle effect
+        function spawnParticle(x, y, color) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.left = x + 'px';
+            particle.style.top = y + 'px';
+            particle.style.width = particle.style.height = (16 + Math.random() * 16) + 'px';
+            particle.style.background = color;
+            document.body.appendChild(particle);
+            setTimeout(() => particle.remove(), 700);
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 1200);
+        }
+
+        // Shake effect
+        function shakeMainbox() {
+            const mainbox = document.getElementById('mainbox');
+            mainbox.classList.add('shake');
+            setTimeout(() => mainbox.classList.remove('shake'), 500);
+        }
+
+        // Interactive button
+        document.querySelectorAll('.emotion-btn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                const feeling = btn.getAttribute('data-feeling');
+                showToast(`กำลังพาไปหน้า: ${feelings[feeling]}`);
+                shakeMainbox();
+
+                // Particle burst
+                const rect = btn.getBoundingClientRect();
+                for (let i = 0; i < 8; i++) {
+                    const px = rect.left + rect.width / 2 + (Math.random() - 0.5) * rect.width * 0.7;
+                    const py = rect.top + rect.height / 2 + (Math.random() - 0.5) * rect.height * 0.7;
+                    const color = feeling === "happy" ? "#fbbf24"
+                        : feeling === "sad" ? "#60a5fa"
+                            : feeling === "calm" ? "#34d399"
+                                : "#ef4444";
+                    spawnParticle(px, py, color);
+                }
+
+                setTimeout(() => {
+                    window.location.href = `game1.html`;
+                }, 600);
+            });
+        });
+    </script>
+</body>
+
+</html>

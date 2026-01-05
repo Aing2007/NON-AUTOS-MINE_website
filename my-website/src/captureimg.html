@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>ถ่ายภาพร่วมกัน</title>
+    <style>
+        :root {
+            --bg: #000;
+            --fg: #fff;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial
+        }
+
+        .stage {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            background: var(--bg)
+        }
+
+        video,
+        canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover
+        }
+
+        #introVideo {
+            z-index: 2;
+            background: #000
+        }
+
+        #camVideo {
+            z-index: 2;
+            display: none;
+            background: #000
+        }
+
+        #countdown {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: min(22vw, 220px);
+            font-weight: 800;
+            letter-spacing: .03em;
+            z-index: 3;
+            color: #ffffffd0;
+            text-shadow: 0 6px 28px rgba(0, 0, 0, .6);
+            animation: fade .2s ease-out;
+        }
+
+        #overlayMsg {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            text-align: center;
+            max-width: 90vw;
+        }
+
+        .btn {
+            appearance: none;
+            border: 0;
+            border-radius: 16px;
+            padding: 14px 18px;
+            background: #10b981;
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 8px 28px rgba(16, 185, 129, .35)
+        }
+
+        .hint {
+            opacity: .8;
+            margin-top: 10px;
+            font-size: 14px
+        }
+
+        #preview {
+            position: fixed;
+            right: 12px;
+            bottom: 12px;
+            width: min(22vw, 240px);
+            height: auto;
+            border-radius: 12px;
+            border: 2px solid #ffffff33;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+            display: none;
+            z-index: 4
+        }
+
+        @keyframes fade {
+            from {
+                opacity: 0
+            }
+
+            to {
+                opacity: 1
+            }
+        }
+
+        .hidden {
+            display: none !important
+        }
+    </style>
+</head>
+
+<body>
+    <div class="stage">
+        <!-- วิดีโอเปิดเรื่อง (ไม่วน) -->
+        <video id="introVideo" playsinline preload="auto">
+            <source src="./nonloopface.mp4" type="video/mp4">
+        </video>
+
+        <!-- กล้องเต็มจอ -->
+        <video id="camVideo" autoplay playsinline muted></video>
+
+        <!-- แคนวาสสำหรับ capture (ซ่อน) -->
+        <canvas id="captureCanvas" class="hidden"></canvas>
+
+        <!-- ตัวเลขนับถอยหลัง -->
+        <div id="countdown">5</div>
+    </div>
+
+    <!-- ภาพพรีวิวหลังถ่าย -->
+    <img id="preview" alt="preview" />
+
+    <!-- ปุ่มปลดล็อกเสียง/เริ่มลำดับการทำงาน -->
+    <div id="overlayMsg">
+        <button id="startBtn" class="btn">แตะเพื่อเริ่ม</button>
+        <div class="hint">ระบบจะเล่นวิดีโอ + พูดข้อความ → เปิดกล้องและนับถอยหลัง 5 วิ → ถ่ายภาพ</div>
+    </div>
+
+    <!-- เสียงเอฟเฟกต์ (แก้พาธให้สัมพันธ์กับตำแหน่งไฟล์นี้) -->
+    <audio id="tickSnd" preload="auto" src="./soundeffect/bubble-pop-04-323580.mp3"></audio>
+    <audio id="shutterSnd" preload="auto" src="./soundeffect/camera-shutter-18399.mp3"></audio>
+
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        const overlayMsg = document.getElementById('overlayMsg');
+        const introVideo = document.getElementById('introVideo');
+        const camVideo = document.getElementById('camVideo');
+        const canvas = document.getElementById('captureCanvas');
+        const countdownEl = document.getElementById('countdown');
+        const tickSnd = document.getElementById('tickSnd');
+        const shutterSnd = document.getElementById('shutterSnd');
+        const previewImg = document.getElementById('preview');
+
+        let stream = null;
+        let lastPreviewURL = null;
+
+        // ===== Utilities =====
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+        const chooseThaiVoice = () => {
+            const voices = speechSynthesis.getVoices();
+            let v = voices.find(v => /th(-|_| )?TH/i.test(v.lang)) || voices.find(v => /Thai/i.test(v.name));
+            return v || voices[0] || null;
+        };
+
+        function speakThai(text) {
+            return new Promise((resolve) => {
+                if (!('speechSynthesis' in window)) { console.warn('Speech Synthesis not available'); return resolve(); }
+                const utter = new SpeechSynthesisUtterance(text);
+                const speakNow = () => {
+                    const v = chooseThaiVoice(); if (v) utter.voice = v;
+                    utter.rate = 1; utter.pitch = 1;
+                    utter.onend = resolve;
+                    utter.onerror = () => resolve();
+                    speechSynthesis.speak(utter);
+                };
+                const vs = speechSynthesis.getVoices();
+                if (!vs || vs.length === 0) {
+                    const handler = () => { speechSynthesis.onvoiceschanged = null; speakNow(); };
+                    speechSynthesis.onvoiceschanged = handler;
+                } else { speakNow(); }
+            });
+        }
+
+        async function openCamera() {
+            // ต้องใช้บน https หรือ localhost
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+            camVideo.srcObject = stream;
+            await new Promise(r => camVideo.onloadedmetadata = r);
+            await camVideo.play().catch(() => { });
+        }
+
+        function stopCamera() {
+            if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+            camVideo.srcObject = null;
+        }
+
+        async function showCountdown(seconds = 5) {
+            countdownEl.style.display = 'flex';
+            for (let i = seconds; i >= 1; i--) {
+                countdownEl.textContent = String(i);
+                try { tickSnd.currentTime = 0; await tickSnd.play(); } catch (_) { }
+                await wait(1000);
+            }
+            countdownEl.style.display = 'none';
+        }
+
+        async function captureFrame() {
+            const vw = camVideo.videoWidth, vh = camVideo.videoHeight;
+            canvas.width = vw; canvas.height = vh;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(camVideo, 0, 0, vw, vh);
+
+            try { shutterSnd.currentTime = 0; await shutterSnd.play(); } catch (_) { }
+
+            return new Promise(resolve => {
+                canvas.toBlob(b => resolve(b), 'image/jpeg', 0.92);
+            });
+        }
+
+        const blobToObjectURL = (blob) => URL.createObjectURL(blob);
+
+        // ===== Main sequence =====
+        async function runSequence() {
+            overlayMsg.classList.add('hidden');
+            try {
+                // เล่นวิดีโอแนะนำ + พูด TTS พร้อมกัน
+                try { await introVideo.play(); } catch (e) { console.warn('Intro play failed', e); }
+                const speakP = speakThai('ยินดีด้วยครับ เราได้เล่นจนจบกิจกรรมที่ 1 แล้ว เรามาถ่ายภาพร่วมกันเถอะ');
+
+                await Promise.race([
+                    new Promise(r => introVideo.onended = r),
+                    wait(120000),
+                ]);
+                await speakP.catch(() => { });
+
+                // เปิดกล้อง
+                introVideo.style.display = 'none';
+                camVideo.style.display = 'block';
+                await openCamera();
+
+                // นับถอยหลัง & ถ่าย
+                await showCountdown(5);
+                const photoBlob = await captureFrame();
+
+                // แสดงพรีวิว (revoke URL เก่า)
+                if (lastPreviewURL) URL.revokeObjectURL(lastPreviewURL);
+                lastPreviewURL = blobToObjectURL(photoBlob);
+                previewImg.src = lastPreviewURL;
+                previewImg.style.display = 'block';
+
+        // ===== ตัวอย่าง Firebase (คอมเมนต์ไว้ก่อน) =====
+        /*
+        // <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+    //
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-storage-compat.js"></script>
+    //
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
+    const firebaseConfig = { apiKey:"YOUR_API_KEY", authDomain:"YOUR_PROJECT_ID.firebaseapp.com",
+    projectId:"YOUR_PROJECT_ID", storageBucket:"YOUR_PROJECT_ID.appspot.com", messagingSenderId:"SENDER_ID",
+    appId:"APP_ID" };
+    firebase.initializeApp(firebaseConfig);
+    const storage = firebase.storage();
+    const db = firebase.firestore();
+
+    const fileName = `captures/capture_${Date.now()}.jpg`;
+    const storageRef = storage.ref().child(fileName);
+    await storageRef.put(photoBlob, { contentType: 'image/jpeg' });
+    const downloadURL = await storageRef.getDownloadURL();
+    await db.collection('captures').add({
+    url: downloadURL,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    note: 'capture after activity-1',
+    });
+    */
+    } catch(err){
+    console.error(err);
+    alert('เกิดข้อผิดพลาดในการเริ่มลำดับการถ่ายภาพ');
+    } finally{
+    // ปิดกล้องถ้าไม่ใช้ต่อ
+    stopCamera();
+    }
+    }
+
+    // ===== Bootstrapping =====
+    startBtn.addEventListener('click', async ()=>{
+    // ปลดล็อกเสียงตามนโยบาย autoplay
+    try { tickSnd.muted = true; await tickSnd.play(); tickSnd.pause(); tickSnd.currentTime = 0; tickSnd.muted = false; }
+    catch(_){}
+    try { shutterSnd.muted = true; await shutterSnd.play(); shutterSnd.pause(); shutterSnd.currentTime = 0;
+    shutterSnd.muted = false; } catch(_){}
+
+    // วิดีโอเปิดเรื่อง
+    introVideo.loop = false;
+    introVideo.currentTime = 0;
+
+    runSequence();
+    });
+
+    // Log รายชื่อเสียง (ช่วยดีบัก)
+    if ('speechSynthesis' in window){
+    const v = speechSynthesis.getVoices();
+    if (v && v.length) console.log('voices:', v);
+    else speechSynthesis.onvoiceschanged = () => {
+    console.log('voices:', speechSynthesis.getVoices());
+    speechSynthesis.onvoiceschanged = null;
+    };
+    }
+    </script>
+</body>
+
+</html>

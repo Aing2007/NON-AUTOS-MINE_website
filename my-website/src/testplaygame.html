@@ -1,0 +1,1022 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8" />
+    <title>เกมรู้จักใบหน้า - Transition + Pose Model (Merged)</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+            background: #7172DC;
+            transition: background .5s;
+            overflow: hidden
+        }
+
+        body.bg-white {
+            background: #fff !important
+        }
+
+        .center-img {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            max-width: min(50vw, 600px);
+            width: 100%;
+            height: auto;
+            display: block;
+            animation: fadein .7s;
+            z-index: 10;
+            transition: left .7s, top .7s, transform .7s
+        }
+
+        .center-img.to-left {
+            left: 25%;
+            top: 50%;
+            transform: translate(-50%, -50%)
+        }
+
+        .split-container {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            transition: background .5s
+        }
+
+        .split-left,
+        .split-right {
+            width: 50vw;
+            height: 100vh;
+            position: relative;
+            transition: box-shadow .5s
+        }
+
+        .split-left {
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 32px 0 rgba(113, 114, 220, .08);
+            z-index: 2
+        }
+
+        .split-right {
+            background: #111;
+            box-shadow: 0 0 32px 0 rgba(113, 114, 220, .08);
+            z-index: 1;
+            overflow: hidden
+        }
+
+        @keyframes fadein {
+            from {
+                opacity: 0;
+                transform: scale(.8)
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1)
+            }
+        }
+
+        .center-number {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-size: clamp(60px, 12vw, 300px);
+            font-weight: 800;
+            color: #fff;
+            z-index: 20;
+            pointer-events: none;
+            user-select: none;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, .3);
+            transition: opacity .5s
+        }
+
+        .center-number.hide {
+            opacity: 0
+        }
+
+        .transition-mask {
+            position: fixed;
+            inset: 0;
+            background: #fff;
+            z-index: 99;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity .7s
+        }
+
+        .transition-mask.show {
+            opacity: 1
+        }
+
+        .stage {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #111
+        }
+
+        video,
+        canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%
+        }
+
+        video {
+            object-fit: contain;
+            background: #111;
+            transform: scaleX(-1);
+            z-index: 1
+        }
+
+        #overlay {
+            z-index: 2;
+            pointer-events: none;
+            position: absolute;
+            inset: 0
+        }
+
+        .hud {
+            position: absolute;
+            left: 8px;
+            bottom: 5px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            background: rgba(0, 0, 0, .30);
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, .08);
+            font-size: .8vw;
+            line-height: 1.2;
+            height: 1.8vw;
+            z-index: 10
+        }
+
+        .badge {
+            padding: 2px 6px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, .04);
+            border: 1px solid rgba(255, 255, 255, .08)
+        }
+
+        .dot {
+            width: 1vw;
+            height: 1vw;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            background: #b33
+        }
+
+        .dot.on {
+            background: #29c26f
+        }
+
+        .next-btn {
+            position: absolute;
+            right: 24px;
+            bottom: 24px;
+            background: #0a502f;
+            color: #fff;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.2vw;
+            padding: 12px 18px;
+            border-radius: 10px;
+            border: 1px solid #169b1a;
+            transition: transform .1s ease, filter .1s ease;
+            z-index: 20
+        }
+
+        .next-btn:hover {
+            transform: translateY(-1px);
+            filter: saturate(1.05)
+        }
+
+        #pose-label-container {
+            position: absolute;
+            top: 12px;
+            right: 24px;
+            z-index: 30;
+            background: rgba(255, 255, 255, .12);
+            border-radius: 12px;
+            padding: 12px 18px;
+            color: #fff;
+            font-size: 1.1em;
+            font-weight: 600;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, .08)
+        }
+
+        .tm-mini {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 25%;
+            aspect-ratio: 4/3;
+            background: rgba(0, 0, 0, .32);
+            border: 1px solid rgba(255, 255, 255, .18);
+            border-radius: 14px;
+            overflow: hidden;
+            z-index: 40;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+            pointer-events: none
+        }
+
+        .tm-mini canvas {
+            width: 100%;
+            height: 100%;
+            display: block
+        }
+
+        .tm-badge {
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            z-index: 41;
+            background: rgba(0, 0, 0, .55);
+            color: #fff;
+            font-weight: 700;
+            font-size: 12px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, .1);
+            pointer-events: none
+        }
+
+        /* Results panel (live) */
+        .results-panel {
+            position: absolute;
+            top: 50%;
+            right: 12px;
+            transform: translateY(-50%);
+            width: 22%;
+            max-width: 360px;
+            min-width: 220px;
+            background: rgba(255, 255, 255, .06);
+            border: 1px solid rgba(255, 255, 255, .18);
+            border-radius: 14px;
+            padding: 12px;
+            color: #fff;
+            z-index: 45;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .25)
+        }
+
+        .results-title {
+            font-weight: 800;
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            opacity: .95
+        }
+
+        .bar-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0
+        }
+
+        .bar-label {
+            width: 38%;
+            font-size: 12px;
+            opacity: .9;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis
+        }
+
+        .bar {
+            flex: 1;
+            height: 14px;
+            background: rgba(255, 255, 255, .12);
+            border-radius: 999px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, .18)
+        }
+
+        .bar>.fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #60a5fa, #22c55e);
+            transition: width .25s ease-out
+        }
+
+        .bar-val {
+            width: 42px;
+            text-align: right;
+            font-size: 12px;
+            opacity: .9
+        }
+
+        @media(max-width:900px) {
+            .split-container {
+                flex-direction: column
+            }
+
+            .split-right {
+                width: 100vw;
+                height: 50vh
+            }
+
+            .next-btn {
+                font-size: 3vw
+            }
+
+            .hud {
+                font-size: 2vw;
+                height: 4vw
+            }
+
+            .tm-mini {
+                width: 38%
+            }
+
+            .results-panel {
+                width: 44%;
+                right: 8px;
+                top: auto;
+                bottom: 8px;
+                transform: none
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="center-number" id="centerNumber">1</div>
+
+    <!-- ใช้ path แบบหลัง -->
+    <img id="gameImg" src="/image/game/image 67.png" alt="เกมรู้จักใบหน้า" class="center-img" style="display:none;" />
+
+    <div class="transition-mask" id="mask"></div>
+
+    <div class="split-container" id="splitContainer" style="display:none;">
+        <div class="split-left">
+            <img src="/image/game/image 67.png" alt="เกมรู้จักใบหน้า" class="center-img to-left" />
+        </div>
+        <div class="split-right">
+            <div class="stage">
+                <video id="video" autoplay playsinline muted></video>
+                <canvas id="overlay"></canvas>
+                <canvas id="pose-canvas"></canvas>
+                <div id="pose-label-container"></div>
+
+                <!-- Mini TM Pose -->
+                <div id="tmMini" class="tm-mini">
+                    <span id="tmBadge" class="tm-badge">Pose</span>
+                    <canvas id="tmMiniCanvas"></canvas>
+                </div>
+
+                <!-- Results panel -->
+                <div class="results-panel" id="resultsPanel">
+                    <p class="results-title" id="resultsTitle">Cooperation (Live)</p>
+                    <div id="bars"></div>
+                </div>
+            </div>
+
+            <div class="hud">
+                <span class="badge"><span id="wsDot" class="dot"></span><span id="wsStatus">WS:
+                        disconnected</span></span>
+                <span class="badge">Cam: <span id="camInfo">—</span></span>
+                <span class="badge">Tx: <span id="sendFps">0</span> fps</span>
+                <span class="badge">Rx: <span id="recvFps">0</span> fps</span>
+                <span class="badge">Latency: <span id="lat">—</span> ms</span>
+            </div>
+            <a href="checkgame1.html" id="nextBtn" class="next-btn">เสร็จสิ้น →</a>
+        </div>
+    </div>
+
+    <!-- TM Pose libs -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+
+    <!-- Firebase (modular CDN v10) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+        // ===== Config ของคุณ (คงตามโค้ดก่อน) =====
+        const firebaseConfig = {
+            apiKey: "AIzaSyAafwo9zrpeiTu11qpafsyOe6lN1yZsexU",
+            authDomain: "nonwebsite-5077e.firebaseapp.com",
+            databaseURL: "https://nonwebsite-5077e-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "nonwebsite-5077e",
+            storageBucket: "nonwebsite-5077e.appspot.com",
+            messagingSenderId: "853304554751",
+            appId: "1:853304554751:web:a314f134e9287ae80d48ca",
+            measurementId: "G-S7T20G4D3J"
+        };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // บันทึกผลต่อสัตว์ (เหมือนโค้ดก่อน)
+        async function saveGame1Result({ userId, animalId, score, extra = {} }) {
+            const payload = {
+                userId: userId || "anonymous",
+                Animal_ID: animalId ?? "unknown",
+                game1: typeof score === "number" ? Math.max(0, Math.min(100, Math.round(score))) : 0,
+                createdAt: serverTimestamp(),
+                ...extra,
+            };
+            const ref = await addDoc(collection(db, "game1_results"), payload);
+            console.log("Firestore saved:", ref.id, payload);
+            return ref.id;
+        }
+
+        // ======== Globals (โครงสร้างแบบโค้ดก่อน) ========
+        const DRAW_POSE_ON_MAIN = false;
+
+        // TTS อังกฤษล้วน
+        function speak(text, cb) {
+            if (!("speechSynthesis" in window)) return cb && cb();
+            try { speechSynthesis.cancel(); } catch { }
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = "en-US"; u.rate = 0.95; u.pitch = 1.0;
+            u.onend = () => cb && cb();
+            u.onerror = () => cb && cb();
+            speechSynthesis.speak(u);
+        }
+        const welcomeText = "Hello everyone! Today, let's play the game 'Know Your Faces'. We'll start with Level One.";
+        const afterText = "Look at the picture and tell me what emotion you see. When you're ready, try making the same face.";
+
+        // ===== Cooperation state & scoring (แบบโค้ดก่อน) =====
+        let boxesA = []; // humans
+        let boxesB = []; // animals
+        let srcW = 0, srcH = 0;
+
+        window.__latestPose = null;
+        window.__latestPoseTop = null;
+
+        const CoopState = {};
+        const COLOR_POOL = ['#22c55e', '#60a5fa', '#f59e0b', '#f43f5e', '#a78bfa', '#10b981', '#ef4444', '#14b8a6', '#eab308', '#8b5cf6'];
+        let colorIdx = 0;
+
+        const SCORE_CFG = {
+            maxHumanSpeedGood: 0.020,
+            maxAnimalSpeedGood: 0.015,
+            minPresenceMs: 1500,
+            wHumanSteady: 0.45,
+            wAnimalStable: 0.25,
+            wPose: 0.30,
+            sampleWindowMs: 5000
+        };
+
+        function centerOf(b) { return { cx: b.x + b.w / 2, cy: b.y + b.h / 2 }; }
+        function diagOf(w, h) { return Math.hypot(w, h) || 1; }
+        function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+        function clamp100(x) { return Math.max(0, Math.min(100, x)); }
+
+        // ===== Helpers overlap / IoU / X-overlap (เพิ่มกติกา “ซ้อนทับก็นับเป็นคู่”) =====
+        function boxesOverlap(a, b) { return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y); }
+        function intersectArea(a, b) {
+            const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+            const x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+            const w = Math.max(0, x2 - x1), h = Math.max(0, y2 - y1);
+            return w * h;
+        }
+        function iou(a, b) {
+            const inter = intersectArea(a, b); if (inter <= 0) return 0;
+            const ua = a.w * a.h + b.w * b.h - inter; return ua > 0 ? inter / ua : 0;
+        }
+        function xOverlaps(a, b) { return !(a.x + a.w <= b.x || a.x >= b.x + b.w); }
+
+        function isAnimalAboveHuman(an, hu) {
+            const anBottom = an.y + an.h, huTop = hu.y;
+            return (anBottom <= huTop) && xOverlaps(an, hu);
+        }
+
+        // ===== Pairing: overlap-first (IoU สูงสุด), else top-down + min dy =====
+        function pairAnimalsWithHumans(animals, humans) {
+            const pairs = [];
+            for (const an of animals) {
+                const label = String(an.label || an.class || an.src || 'animal');
+                let best = null;
+
+                const overlapCands = [];
+                for (const hu of humans) {
+                    if (boxesOverlap(an, hu)) {
+                        overlapCands.push({ hu, score: iou(an, hu) });
+                    }
+                }
+                if (overlapCands.length > 0) {
+                    overlapCands.sort((a, b) => b.score - a.score);
+                    best = overlapCands[0].hu;
+                } else {
+                    let bestDy = Infinity;
+                    for (const hu of humans) {
+                        if (!isAnimalAboveHuman(an, hu)) continue;
+                        const dy = Math.max(0, hu.y - (an.y + an.h));
+                        if (dy < bestDy) { bestDy = dy; best = hu; }
+                    }
+                }
+                if (best) { pairs.push({ label, animal: an, human: best }); }
+            }
+            return pairs;
+        }
+
+        // ===== Parse message → boxesA/boxesB & map normalized → pixels (แบบก่อน) =====
+        function parseServerMessageToBoxes(msg, video) {
+            const vw = video.videoWidth || 1920;
+            const vh = video.videoHeight || 1080;
+
+            let a = msg.boxesA || msg.boxes_human || msg.humans || [];
+            let b = msg.boxesB || msg.boxes_animal || msg.animals || [];
+
+            if ((!a.length && !b.length) && Array.isArray(msg.detections)) {
+                const low = s => (s || '').toLowerCase();
+                a = msg.detections.filter(o => low(o.class || o.label) === 'human' || low(o.src || '').includes('human'));
+                b = msg.detections.filter(o => low(o.class || o.label) === 'animal' || low(o.src || '').includes('animal'));
+            }
+            if ((!a.length && !b.length) && Array.isArray(msg.boxes)) {
+                const all = msg.boxes, low = s => (s || '').toLowerCase();
+                a = all.filter(bb => low(bb.class || bb.label || bb.src).includes('human'));
+                b = all.filter(bb => low(bb.class || bb.label || bb.src).includes('animal'));
+                if (!a.length && !b.length) a = all; // fallback
+            }
+
+            if (typeof msg.w === 'number') srcW = msg.w;
+            if (typeof msg.h === 'number') srcH = msg.h;
+
+            const BW = srcW || vw, BH = srcH || vh;
+            const toPixels = (bb) => {
+                if (!bb) return bb;
+                const norm = (bb.w <= 1.5 && bb.h <= 1.5);
+                return norm ? { ...bb, x: bb.x * BW, y: bb.y * BH, w: bb.w * BW, h: bb.h * BH } : bb;
+            };
+            boxesA = (a || []).map(toPixels);
+            boxesB = (b || []).map(toPixels);
+        }
+
+        // ===== Update cooperation per pair (EMA speed + presence + pose) =====
+        function updateCooperationForPairs(pairs, nowMs) {
+            const W = srcW || 1920, H = srcH || 1080, diag = diagOf(W, H);
+            const poseProb = (window.__latestPoseTop?.prob || 0);
+
+            for (const { label, animal, human } of pairs) {
+                if (!CoopState[label]) {
+                    CoopState[label] = {
+                        color: COLOR_POOL[colorIdx++ % COLOR_POOL.length],
+                        lastHumanCXN: null, lastHumanCYN: null, lastAnCXN: null, lastAnCYN: null, lastT: nowMs,
+                        speedHumanEma: 0, speedAnimalEma: 0, presentStreakMs: 0,
+                        scoreNow: 0, samples5s: [], lastBucketTs: nowMs
+                    };
+                }
+                const st = CoopState[label];
+
+                const hc = centerOf(human), ac = centerOf(animal);
+                const hxn = hc.cx / W, hyn = hc.cy / H;
+                const axn = ac.cx / W, ayn = ac.cy / H;
+
+                const dt = Math.max(1, nowMs - (st.lastT || nowMs)) / 1000.0;
+
+                let vH = 0, vA = 0;
+                if (st.lastHumanCXN != null) {
+                    const dh = Math.hypot((st.lastHumanCXN - hxn) * W, (st.lastHumanCYN - hyn) * H) / diag;
+                    vH = dh / dt;
+                }
+                if (st.lastAnCXN != null) {
+                    const da = Math.hypot((st.lastAnCXN - axn) * W, (st.lastAnCYN - ayn) * H) / diag;
+                    vA = da / dt;
+                }
+
+                st.speedHumanEma = (st.lastHumanCXN == null) ? vH : (0.35 * vH + 0.65 * st.speedHumanEma);
+                st.speedAnimalEma = (st.lastAnCXN == null) ? vA : (0.35 * vA + 0.65 * st.speedAnimalEma);
+
+                st.lastHumanCXN = hxn; st.lastHumanCYN = hyn;
+                st.lastAnCXN = axn; st.lastAnCYN = ayn;
+                st.lastT = nowMs;
+
+                st.presentStreakMs += (dt * 1000);
+
+                const humanSteady = clamp100(100 * (1 - (st.speedHumanEma / SCORE_CFG.maxHumanSpeedGood)));
+                const animalStableRaw = clamp100(100 * (1 - (st.speedAnimalEma / SCORE_CFG.maxAnimalSpeedGood)));
+                const presenceFactor = clamp01(st.presentStreakMs / SCORE_CFG.minPresenceMs);
+                const animalStable = animalStableRaw * presenceFactor;
+                const posePct = clamp100(poseProb * 100);
+
+                const score = SCORE_CFG.wHumanSteady * humanSteady
+                    + SCORE_CFG.wAnimalStable * animalStable
+                    + SCORE_CFG.wPose * posePct;
+                st.scoreNow = clamp100(score);
+
+                if (st.lastBucketTs == null) st.lastBucketTs = nowMs;
+                if (nowMs - st.lastBucketTs >= SCORE_CFG.sampleWindowMs) {
+                    st.samples5s.push(clamp100(st.scoreNow));
+                    st.lastBucketTs = nowMs;
+                }
+            }
+
+            const alive = new Set(pairs.map(p => p.label));
+            for (const [label, st] of Object.entries(CoopState)) {
+                if (!alive.has(label)) st.presentStreakMs = 0;
+            }
+
+            window.__coopByAnimal = Object.fromEntries(
+                Object.entries(CoopState).map(([label, st]) => [label, st.scoreNow])
+            );
+        }
+
+        function finalizeCooperation() {
+            const result = {};
+            for (const [label, st] of Object.entries(CoopState)) {
+                let arr = st.samples5s.slice();
+                if (arr.length === 0) arr = [clamp100(st.scoreNow || 0)];
+                const avg = clamp100(arr.reduce((a, b) => a + b, 0) / arr.length);
+                result[label] = Math.round(avg);
+            }
+            window.__finalCoopPerAnimal = result;
+            try { localStorage.setItem('finalCoop', JSON.stringify({ ts: Date.now(), data: result })); } catch { }
+            return result;
+        }
+
+        // ===== Results panel (กราฟสด/ผลเฉลี่ย) =====
+        function renderBars(showFinal = false) {
+            const titleEl = document.getElementById('resultsTitle');
+            const barsEl = document.getElementById('bars');
+            if (!barsEl) return;
+
+            let dataEntries = [];
+            if (showFinal && window.__finalCoopPerAnimal) {
+                titleEl.textContent = 'Average (locked before leaving)';
+                dataEntries = Object.entries(window.__finalCoopPerAnimal)
+                    .map(([label, score]) => ({ label, score, color: CoopState[label]?.color || '#60a5fa' }));
+            } else {
+                titleEl.textContent = 'Cooperation (Live)';
+                dataEntries = Object.entries(CoopState)
+                    .map(([label, st]) => ({ label, score: Math.round(st.scoreNow || 0), color: st.color || '#60a5fa' }));
+            }
+
+            const existing = new Set();
+            for (const { label, score, color } of dataEntries.sort((a, b) => b.score - a.score)) {
+                existing.add(label);
+                let row = document.getElementById('bar-' + label);
+                if (!row) {
+                    row = document.createElement('div');
+                    row.className = 'bar-row'; row.id = 'bar-' + label;
+                    row.innerHTML = `
+            <div class="bar-label"></div>
+            <div class="bar"><div class="fill"></div></div>
+            <div class="bar-val">0%</div>`;
+                    barsEl.appendChild(row);
+                }
+                row.querySelector('.bar-label').textContent = label;
+                const fill = row.querySelector('.fill');
+                fill.style.width = `${score}%`;
+                fill.style.background = `linear-gradient(90deg, ${color}, #22c55e)`;
+                row.querySelector('.bar-val').textContent = `${score}%`;
+            }
+            if (!showFinal) {
+                Array.from(barsEl.querySelectorAll('.bar-row')).forEach(row => {
+                    const label = row.id.replace('bar-', '');
+                    if (!existing.has(label)) row.remove();
+                });
+            }
+        }
+
+        // ===== Intro flow (TTS → Transition → Start Cam/WS/TM) =====
+        window.addEventListener("load", () => {
+            speak(welcomeText, () => {
+                document.body.classList.add("bg-white");
+                document.getElementById("centerNumber").classList.add("hide");
+                const img = document.getElementById("gameImg");
+                img.style.display = "block"; img.classList.remove("to-left");
+                speak(afterText, () => {
+                    const mask = document.getElementById("mask"); mask.classList.add("show");
+                    setTimeout(async () => {
+                        mask.classList.remove("show");
+                        document.getElementById("splitContainer").style.display = "flex";
+                        img.style.display = "none";
+                        startCameraAndWS(); // เริ่มกล้อง+WS+draw
+
+                        await ensureVideoReady(document.getElementById("video"));
+                        initPoseModel();
+                        initPoseMiniOverlay();
+
+                        setInterval(() => renderBars(false), 200);
+                    }, 700);
+                });
+            });
+        });
+
+        // ===== Util =====
+        function ensureVideoReady(video) {
+            return new Promise((resolve) => {
+                const ready = () => video.videoWidth > 0 && video.videoHeight > 0;
+                if (video.readyState >= 2 && ready()) return resolve();
+                let tries = 0;
+                const tick = setInterval(() => { if (ready() || ++tries > 200) { clearInterval(tick); resolve(); } }, 25);
+                const onCanPlay = () => { if (ready()) { video.removeEventListener('canplay', onCanPlay); clearInterval(tick); resolve(); } };
+                video.addEventListener('canplay', onCanPlay);
+            });
+        }
+
+        // ===== Camera + WS + Draw (WS แบบโค้ดหลัง, overlay & DPR แบบโค้ดหลัง) =====
+        function startCameraAndWS() {
+            const video = document.getElementById('video');
+            const overlay = document.getElementById('overlay');
+            const wsStatus = document.getElementById('wsStatus');
+            const wsDot = document.getElementById('wsDot');
+            const camInfo = document.getElementById('camInfo');
+            const sendFpsEl = document.getElementById('sendFps');
+            const recvFpsEl = document.getElementById('recvFps');
+            const latEl = document.getElementById('lat');
+
+            let ws; let streaming = false;
+            let lastSend = 0; let sendCount = 0, recvCount = 0; let lastLatency = null; let sendingNow = false;
+
+            setInterval(() => { sendFpsEl.textContent = sendCount; sendCount = 0; recvFpsEl.textContent = recvCount; recvCount = 0; latEl.textContent = (lastLatency != null ? Math.round(lastLatency) : '—'); }, 1000);
+
+            async function openCamera() {
+                const constraints = { audio: false, video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } } };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                const t = stream.getVideoTracks()[0]; const s = t.getSettings ? t.getSettings() : {};
+                camInfo.textContent = `${s.width || '?'}×${s.height || '?'} @ ${s.frameRate || '?'}fps`;
+                await video.play();
+                resizeOverlay();
+            }
+
+            function resizeOverlay() {
+                overlay.style.left = '0'; overlay.style.top = '0';
+                overlay.style.width = '100%'; overlay.style.height = '100%';
+                const dpr = Math.max(1, window.devicePixelRatio || 1);
+                const cssW = overlay.clientWidth, cssH = overlay.clientHeight;
+                overlay.width = Math.max(1, Math.floor(cssW * dpr));
+                overlay.height = Math.max(1, Math.floor(cssH * dpr));
+            }
+            new ResizeObserver(resizeOverlay).observe(overlay);
+            window.addEventListener('resize', resizeOverlay);
+
+            const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws3';
+            function connectWS() {
+                try { ws = new WebSocket(WS_URL); } catch (e) { wsStatus.textContent = 'WS: error'; wsDot.classList.remove('on'); return; }
+                ws.binaryType = 'arraybuffer';
+                ws.onopen = () => { wsStatus.textContent = 'WS: connected'; wsDot.classList.add('on'); };
+                ws.onclose = () => { wsStatus.textContent = 'WS: disconnected'; wsDot.classList.remove('on'); if (streaming) setTimeout(connectWS, 1200); };
+                ws.onerror = () => { wsStatus.textContent = 'WS: error'; wsDot.classList.remove('on'); };
+                ws.onmessage = (ev) => {
+                    try {
+                        const msg = JSON.parse(ev.data);
+                        parseServerMessageToBoxes(msg, video); // ← แบบโค้ดก่อน
+                        lastLatency = (msg.client_latency_ms != null ? msg.client_latency_ms : msg.t_ms);
+                        recvCount++;
+                    } catch (e) { console.warn('WS parse error:', e); }
+                };
+            }
+
+            // ส่งเฟรมไปเซิร์ฟเวอร์ (header JSON {t0} + JPEG) แบบโค้ดหลัง
+            const sendCanvas = document.createElement('canvas');
+            const sendCtx = sendCanvas.getContext('2d', { willReadFrequently: false });
+            function computeSendSize(vw, vh) { if (!vw || !vh) return { w: 640, h: 360 }; const sc = Math.min(1, 768 / vw); return { w: Math.round(vw * sc), h: Math.round(vh * sc) }; }
+            function sendOneFrame() {
+                if (!ws || ws.readyState !== 1) return;
+                if (!video.videoWidth || !video.videoHeight) return;
+                if (sendingNow) return;
+                const now = performance.now(), interval = 1000 / 20;
+                if ((now - lastSend) < interval) return;
+                sendingNow = true;
+                const { w, h } = computeSendSize(video.videoWidth, video.videoHeight);
+                if (sendCanvas.width !== w || sendCanvas.height !== h) { sendCanvas.width = w; sendCanvas.height = h; }
+                sendCtx.drawImage(video, 0, 0, w, h);
+                sendCanvas.toBlob((blob) => {
+                    sendingNow = false; if (!blob) return;
+                    lastSend = performance.now();
+                    const hdr = new TextEncoder().encode(JSON.stringify({ t0: lastSend }));
+                    const hdrLen = new Uint32Array([hdr.byteLength]);
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const jpegArr = new Uint8Array(reader.result);
+                        const packet = new Uint8Array(4 + hdr.byteLength + jpegArr.byteLength);
+                        packet.set(new Uint8Array(hdrLen.buffer), 0); packet.set(hdr, 4); packet.set(jpegArr, 4 + hdr.byteLength);
+                        try { ws.send(packet); sendCount++; } catch { }
+                    };
+                    reader.readAsArrayBuffer(blob);
+                }, 'image/jpeg', 0.7);
+            }
+            function startLoop() {
+                if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+                    const cb = () => { if (streaming) { sendOneFrame(); video.requestVideoFrameCallback(cb); } };
+                    video.requestVideoFrameCallback(cb);
+                } else {
+                    const id = setInterval(() => { if (!streaming) { clearInterval(id); return; } sendOneFrame(); }, 10);
+                }
+            }
+
+            // วาด overlay ด้วย DPR แบบโค้ดหลัง + ผสานกล่อง/คู่/คะแนนแบบโค้ดก่อน
+            function drawLoop() {
+                const ctx = overlay.getContext('2d');
+                const draw = () => {
+                    // reset & clear in device pixels
+                    const dpr = Math.max(1, window.devicePixelRatio || 1);
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    ctx.clearRect(0, 0, overlay.width, overlay.height);
+                    // set to CSS px space
+                    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                    const vw = video.videoWidth, vh = video.videoHeight;
+                    const baseW = srcW || vw, baseH = srcH || vh;
+                    const cssW = overlay.clientWidth, cssH = overlay.clientHeight;
+                    if (!vw || !vh || !baseW || !baseH || !cssW || !cssH) { requestAnimationFrame(draw); return; }
+
+                    // fit area (object-fit: contain)
+                    const sVid = Math.min(cssW / vw, cssH / vh);
+                    const drawW = vw * sVid, drawH = vh * sVid;
+                    const offX = (cssW - drawW) / 2, offY = (cssH - drawH) / 2;
+
+                    // map base→display
+                    const kx = drawW / baseW, ky = drawH / baseH;
+                    const sLine = Math.min(kx, ky);
+
+                    // ========== Draw human & animal boxes ==========
+                    ctx.save();
+                    ctx.translate(offX, offY);
+                    ctx.scale(kx, ky);
+                    ctx.lineWidth = Math.max(1, 2 / sLine);
+                    ctx.font = `${Math.max(10, 14 / sLine)}px ui-sans-serif`;
+
+                    // Humans (green)
+                    ctx.strokeStyle = '#00FF88'; ctx.fillStyle = 'rgba(0,0,0,0.45)';
+                    for (const b of boxesA) {
+                        const mx = baseW - (b.x + b.w); // mirror X
+                        ctx.beginPath(); ctx.rect(mx, b.y, b.w, b.h); ctx.stroke();
+                        const tag = `${b.label || b.class || 'human'} ${b.conf != null ? (b.conf * 100 | 0) : ''}%`;
+                        const tw = ctx.measureText(tag).width + 8, th = 18 / sLine + 6;
+                        ctx.fillRect(mx, b.y - th, tw, th);
+                        ctx.fillStyle = '#00FF88'; ctx.fillText(tag, mx + 4, b.y - 6 / sLine);
+                        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+                    }
+
+                    // Animals (blue)
+                    ctx.strokeStyle = '#3b82f6';
+                    for (const b of boxesB) {
+                        const mx = baseW - (b.x + b.w);
+                        ctx.beginPath(); ctx.rect(mx, b.y, b.w, b.h); ctx.stroke();
+                        const tag = `${b.label || b.class || 'animal'} ${b.conf != null ? (b.conf * 100 | 0) : ''}%`;
+                        const tw = ctx.measureText(tag).width + 8, th = 18 / sLine + 6;
+                        ctx.fillRect(mx, b.y - th, tw, th);
+                        ctx.fillStyle = '#3b82f6'; ctx.fillText(tag, mx + 4, b.y - 6 / sLine);
+                        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+                    }
+                    ctx.restore();
+
+                    // Pair lines + update scores
+                    const pairs = pairAnimalsWithHumans(boxesB, boxesA);
+                    const nowMs = performance.now();
+                    updateCooperationForPairs(pairs, nowMs);
+
+                    ctx.save();
+                    ctx.translate(offX, offY);
+                    ctx.scale(kx, ky);
+                    ctx.lineWidth = Math.max(1, 2 / sLine);
+                    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+                    for (const { animal, human } of pairs) {
+                        const ac = centerOf(animal), hc = centerOf(human);
+                        const amx = baseW - ac.cx, hmx = baseW - hc.cx;
+                        ctx.beginPath(); ctx.moveTo(amx, ac.cy); ctx.lineTo(hmx, human.y); ctx.stroke();
+                    }
+                    ctx.restore();
+
+                    // (optional) draw pose on main
+                    if (DRAW_POSE_ON_MAIN) {
+                        const baseW_pose = vw, baseH_pose = vh;
+                        const kx_pose = drawW / baseW_pose, ky_pose = drawH / baseH_pose;
+                        drawPoseOnOverlay(ctx, window.__latestPose, baseW_pose, baseH_pose, offX, offY, kx_pose, ky_pose);
+                    }
+
+                    requestAnimationFrame(draw);
+                };
+                requestAnimationFrame(draw);
+            }
+
+            function drawPoseOnOverlay(ctx, pose, baseW, baseH, offX, offY, kx, ky) {
+                if (!pose || !pose.keypoints) return;
+                const minScore = 0.2;
+                const mapPt = (kp) => { const p = kp.position || kp; const x = p.x ?? 0, y = p.y ?? 0; const mx = baseW - x; return { x: offX + mx * kx, y: offY + y * ky, s: kp.score ?? kp.probability ?? 0 }; };
+                const EDGES = [['leftShoulder', 'rightShoulder'], ['leftShoulder', 'leftElbow'], ['leftElbow', 'leftWrist'], ['rightShoulder', 'rightElbow'], ['rightElbow', 'rightWrist'], ['leftShoulder', 'leftHip'], ['rightShoulder', 'rightHip'], ['leftHip', 'rightHip'], ['leftHip', 'leftKnee'], ['leftKnee', 'leftAnkle'], ['rightHip', 'rightKnee'], ['rightKnee', 'rightAnkle'], ['nose', 'leftEye'], ['nose', 'rightEye'], ['leftEye', 'leftEar'], ['rightEye', 'rightEar']];
+                const byName = {}; for (const kp of pose.keypoints) { const n = kp.part || kp.name || ''; if (n) byName[n] = kp; }
+                ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#00E5FF'; ctx.fillStyle = '#00E5FF'; ctx.lineWidth = 3;
+                for (const [a, b] of EDGES) { const ka = byName[a], kb = byName[b]; if (!ka || !kb) continue; const A = mapPt(ka), B = mapPt(kb); if (A.s < minScore || B.s < minScore) continue; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); }
+                for (const name in byName) { const P = mapPt(byName[name]); if (P.s < minScore) continue; ctx.beginPath(); ctx.arc(P.x, P.y, 4, 0, Math.PI * 2); ctx.fill(); }
+                ctx.restore();
+            }
+
+            // เปิดทุกอย่าง
+            openCamera().then(() => { connectWS(); streaming = true; startLoop(); drawLoop(); });
+        }
+
+        // ===== TM Pose =====
+        const TM_URL = "https://teachablemachine.withgoogle.com/models/E9Gz4yAP4/";
+        let tmModel, tmLabelContainer;
+        async function initPoseModel() {
+            const modelURL = TM_URL + "model.json";
+            const metadataURL = TM_URL + "metadata.json";
+            tmModel = await tmPose.load(modelURL, metadataURL);
+
+            const video = document.getElementById("video");
+            tmLabelContainer = document.getElementById("pose-label-container");
+            tmLabelContainer.innerHTML = "";
+            for (let i = 0; i < tmModel.getTotalClasses(); i++) tmLabelContainer.appendChild(document.createElement("div"));
+
+            const loop = async () => {
+                const { pose, posenetOutput } = await tmModel.estimatePose(video);
+                const prediction = await tmModel.predict(posenetOutput);
+                for (let i = 0; i < prediction.length; i++) {
+                    tmLabelContainer.childNodes[i].innerHTML = prediction[i].className + ": " + prediction[i].probability.toFixed(2);
+                }
+                window.__latestPose = pose;
+                let top = prediction[0]; for (const p of prediction) { if (p.probability > top.probability) top = p; }
+                window.__latestPoseTop = { name: top.className, prob: top.probability };
+
+                const badge = document.getElementById('tmBadge');
+                if (badge && top) badge.textContent = `${top.className} ${(top.probability * 100).toFixed(0)}%`;
+                requestAnimationFrame(loop);
+            };
+            requestAnimationFrame(loop);
+        }
+
+        // ===== Mini Pose Canvas =====
+        function initPoseMiniOverlay() {
+            const mini = document.getElementById("tmMini");
+            const canvas = document.getElementById("tmMiniCanvas");
+            const ctx = canvas.getContext("2d");
+            const video = document.getElementById("video");
+
+            const resize = () => {
+                const dpr = Math.max(1, window.devicePixelRatio || 1);
+                const rect = mini.getBoundingClientRect();
+                const cssW = Math.max(1, rect.width), cssH = Math.max(1, rect.height);
+                canvas.width = Math.floor(cssW * dpr); canvas.height = Math.floor(cssH * dpr);
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            };
+            resize(); window.addEventListener("resize", resize); new ResizeObserver(resize).observe(mini);
+
+            const render = () => {
+                const cw = mini.clientWidth, ch = mini.clientHeight;
+                ctx.clearRect(0, 0, cw, ch);
+
+                const vw = video.videoWidth, vh = video.videoHeight;
+                if (vw && vh && cw > 0 && ch > 0) {
+                    const scale = Math.min(cw / vw, ch / vh);
+                    const drawW = vw * scale, drawH = vh * scale;
+                    const offX = (cw - drawW) / 2, offY = (ch - drawH) / 2;
+
+                    ctx.save(); ctx.translate(offX + drawW, offY); ctx.scale(-scale, scale);
+                    ctx.drawImage(video, 0, 0, vw, vh); ctx.restore();
+
+                    const pose = window.__latestPose;
+                    if (pose && pose.keypoints) {
+                        ctx.save(); ctx.translate(offX, offY); ctx.scale(scale, scale);
+                        ctx.translate(vw, 0); ctx.scale(-1, 1);
+                        const minScore = 0.2;
+                        tmPose.drawKeypoints(pose.keypoints, minScore, ctx);
+                        tmPose.drawSkeleton(pose.keypoints, minScore, ctx);
+                        ctx.restore();
+                    }
+                }
+                requestAnimationFrame(render);
+            };
+            requestAnimationFrame(render);
+        }
+
+        // ===== Next Button: finalize → save per animal → navigate =====
+        document.getElementById('nextBtn')?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const btn = e.currentTarget;
+            const href = btn.getAttribute('href');
+            btn.textContent = 'Saving…'; btn.style.opacity = .85; btn.style.pointerEvents = 'none';
+
+            const finalMap = finalizeCooperation();  // { animalLabel: scoreInt }
+            renderBars(true);
+            try { sessionStorage.setItem('finalCoop', JSON.stringify(finalMap)); } catch { }
+
+            try {
+                const userId = window.__currentUserId || 'anonymous';
+                const extra = { source: 'game1', page: location.pathname, ts: Date.now() };
+                await Promise.all(Object.entries(finalMap).map(([animalId, score]) => saveGame1Result({ userId, animalId, score, extra })));
+                window.location.href = href;
+            } catch (err) {
+                console.error('Save failed:', err);
+                alert('บันทึกผลไม่สำเร็จ กรุณาลองอีกครั้ง');
+                btn.textContent = 'เสร็จสิ้น →'; btn.style.opacity = 1; btn.style.pointerEvents = '';
+            }
+        });
+
+    </script>
+</body>
+
+</html>

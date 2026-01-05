@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Check Game (happy detector @8003)</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <style>
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            background: #fff;
+            color: #111;
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+            font-size: 1.2vw;
+        }
+
+        .stage {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            grid-template-rows: 1fr auto auto;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        header,
+        footer {
+            padding: 1vw 2vw;
+            background: #f6f7f8;
+            border-bottom: 0.15vw solid #e5e7eb;
+        }
+
+        footer {
+            border-top: 0.15vw solid #e5e7eb;
+            border-bottom: none;
+            font-size: 1vw;
+        }
+
+        .content {
+            position: relative;
+            overflow: hidden;
+            width: 100vw;
+            height: 100%;
+        }
+
+        /* กล้อง + overlay */
+        #video {
+            position: absolute;
+            inset: 0;
+            width: 100vw;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+            transform: scaleX(-1);
+        }
+
+        #overlay {
+            position: absolute;
+            inset: 0;
+            width: 100vw;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        /* HUD moved to bottom */
+        .hud-bottom {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100vw;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            z-index: 50;
+            padding-bottom: 2vw;
+            pointer-events: none;
+        }
+
+        .hud {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: #111;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            border-radius: 8px;
+        }
+
+        /* สัญลักษณ์ถูกต้อง */
+        .bigcheck {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        .bigcheck .mark {
+            width: 28vw;
+            height: 28vw;
+            border-radius: 50%;
+            border: 0.5vw solid #1db954;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18vw;
+            color: #1db954;
+            background: #fff;
+            box-shadow: 0 1vw 3vw rgba(0, 0, 0, .2);
+            animation: pop .28s ease-out;
+        }
+
+        @keyframes pop {
+            from {
+                transform: scale(.8);
+                opacity: 0
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1
+            }
+        }
+
+        .next-game-btn {
+            position: fixed;
+            right: 3vw;
+            bottom: 3vw;
+            background: #22c55e;
+            color: #fff;
+            font-weight: 700;
+            font-size: 2vw;
+            padding: 1.2vw 2vw;
+            border-radius: 2vw;
+            border: none;
+            box-shadow: 0 0.2vw 1vw rgba(34, 197, 94, 0.12);
+            cursor: pointer;
+            z-index: 100;
+            transition: background 0.15s, transform 0.1s;
+            text-decoration: none;
+            outline: none;
+        }
+
+        .next-game-btn:hover,
+        .next-game-btn:focus {
+            background: #16a34a;
+            transform: scale(1.04);
+        }
+
+        @media (max-width: 900px) {
+
+            html,
+            body {
+                font-size: 3vw;
+            }
+
+            .stage,
+            .content,
+            #video,
+            #overlay {
+                width: 100vw !important;
+                height: 100vh !important;
+            }
+
+            .bigcheck .mark {
+                width: 40vw;
+                height: 40vw;
+                font-size: 28vw;
+            }
+
+            .next-game-btn {
+                font-size: 4vw;
+                padding: 2vw 4vw;
+                border-radius: 4vw;
+                right: 4vw;
+                bottom: 4vw;
+            }
+
+            .hud-bottom {
+                padding-bottom: 4vw;
+            }
+
+            .hud {
+                font-size: 12px;
+                gap: 5px;
+                padding: 0 2vw;
+                border-radius: 4vw;
+            }
+
+            .badge {
+                padding: 1.5vw 3vw;
+                border-radius: 3vw;
+                font-size: 12px;
+            }
+
+            header,
+            footer {
+                font-size: 2vw;
+                padding: 2vw 4vw;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="stage">
+        <div class="content">
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="overlay"></canvas>
+            <div class="bigcheck" id="bigcheck">
+                <div class="mark">✓</div>
+            </div>
+        </div>
+        <!-- HUD moved to bottom -->
+        <div class="hud-bottom">
+            <div class="hud">
+                <span class="badge">ส่ง: <span id="tx">0</span> fps</span>
+                <span class="badge">รับ: <span id="rx">0</span> fps</span>
+                <span class="badge">Latency: <span id="lat">—</span> ms</span>
+                <span class="badge">WS: <span id="ws">—</span></span>
+                <span class="badge">Cam: <span id="cam">—</span></span>
+            </div>
+        </div>
+    </div>
+
+    <a href="game3.html" id="nextGameBtn" class="next-game-btn">ไปยังข้อถัดไป</a>
+
+    <script>
+        // ====== CONFIG ======
+        const TARGET_SEND_FPS = 18;
+        const JPEG_QUALITY = 0.7;
+        const MAX_SEND_WIDTH = 768;
+        const TARGET_LABEL = "nomal";
+        const TARGET_SOUND = "./soundeffect/sonido-correcto-331225.mp3";
+        const NEXT_PAGE = "game3.html";
+
+        const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws4';
+
+        // ====== Elements ======
+        const videoEl = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const txEl = document.getElementById('tx');
+        const rxEl = document.getElementById('rx');
+        const latEl = document.getElementById('lat');
+        const wsEl = document.getElementById('ws');
+        const camEl = document.getElementById('cam');
+        const bigcheck = document.getElementById('bigcheck');
+        const nextGameBtn = document.getElementById("nextGameBtn");
+
+        // ====== State ======
+        let ws = null, streaming = false, sending = false;
+        let sendCount = 0, recvCount = 0, lastLatency = null;
+        let boxes = [];
+        let lastSend = 0;
+        let detectedOnce = false;
+        const sendCanvas = document.createElement('canvas');
+        const sendCtx = sendCanvas.getContext('2d', { willReadFrequently: false });
+        const sfx = new Audio(TARGET_SOUND);
+        sfx.preload = 'auto';
+
+        function resizeOverlay() {
+            const rect = videoEl.getBoundingClientRect();
+            const dpr = Math.max(1, window.devicePixelRatio || 1);
+            const cssW = Math.floor(rect.width);
+            const cssH = Math.floor(rect.height);
+            overlay.style.left = rect.left + 'px';
+            overlay.style.top = rect.top + 'px';
+            overlay.style.width = cssW + 'px';
+            overlay.style.height = cssH + 'px';
+            if (overlay.width !== cssW * dpr || overlay.height !== cssH * dpr) {
+                overlay.width = cssW * dpr; overlay.height = cssH * dpr;
+                overlay.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+        }
+        window.addEventListener('resize', resizeOverlay);
+
+        async function openCamera() {
+            const constraints = { audio: false, video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 60 } } };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            videoEl.srcObject = stream;
+            const track = stream.getVideoTracks()[0];
+            const s = track.getSettings ? track.getSettings() : {};
+            camEl.textContent = `${s.width || '?'}×${s.height || '?'} @ ${s.frameRate || '?'}fps`;
+            await videoEl.play();
+            resizeOverlay();
+        }
+
+        function computeSendSize(vw, vh) {
+            if (!vw || !vh) return { w: 640, h: 360 };
+            const scale = Math.min(1, MAX_SEND_WIDTH / vw);
+            return { w: Math.round(vw * scale), h: Math.round(vh * scale) };
+        }
+
+        function connectWS() {
+            ws = new WebSocket(WS_URL);
+            ws.binaryType = 'arraybuffer';
+            ws.onopen = () => { wsEl.textContent = "connected"; };
+            ws.onclose = () => { wsEl.textContent = "disconnected"; };
+            ws.onerror = () => { wsEl.textContent = "error"; };
+            ws.onmessage = (ev) => {
+                try {
+                    const msg = JSON.parse(ev.data);
+                    boxes = msg.boxes || [];
+                    lastLatency = (msg.client_latency_ms != null ? msg.client_latency_ms : msg.t_ms);
+                    recvCount++;
+
+                    // ตรวจจับ "nomal" > 70% และยังไม่เคยแสดงมาก่อน
+                    if (!detectedOnce) {
+                        const found = boxes.find(b =>
+                            (b.label || '').toLowerCase() === TARGET_LABEL &&
+                            (b.conf != null && b.conf > 0.7)
+                        );
+                        if (found) {
+                            detectedOnce = true;
+                            bigcheck.style.display = 'flex';
+                            try { sfx.currentTime = 0; } catch { }
+                            sfx.play().catch(() => { });
+                            setTimeout(() => {
+                                window.location.href = NEXT_PAGE;
+                            }, 900); // แสดงเครื่องหมายถูกและเสียงก่อนเปลี่ยนหน้า
+                        }
+                    }
+                } catch { }
+            };
+        }
+
+        function sendOneFrame() {
+            if (!ws || ws.readyState !== 1) return;
+            if (!videoEl.videoWidth || !videoEl.videoHeight) return;
+            if (sending) return;
+
+            const now = performance.now();
+            const interval = 1000 / TARGET_SEND_FPS;
+            if ((now - lastSend) < interval) return;
+            sending = true;
+
+            const { w, h } = computeSendSize(videoEl.videoWidth, videoEl.videoHeight);
+            if (sendCanvas.width !== w || sendCanvas.height !== h) { sendCanvas.width = w; sendCanvas.height = h; }
+            sendCtx.drawImage(videoEl, 0, 0, w, h);
+
+            sendCanvas.toBlob((blob) => {
+                sending = false;
+                if (!blob) return;
+                lastSend = performance.now();
+                const hdr = new TextEncoder().encode(JSON.stringify({ t0: lastSend }));
+                const hdrLen = new Uint32Array([hdr.byteLength]);
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const jpegArr = new Uint8Array(reader.result);
+                    const packet = new Uint8Array(4 + hdr.byteLength + jpegArr.byteLength);
+                    packet.set(new Uint8Array(hdrLen.buffer), 0);
+                    packet.set(hdr, 4);
+                    packet.set(jpegArr, 4 + hdr.byteLength);
+                    try { ws.send(packet); sendCount++; } catch { }
+                };
+                reader.readAsArrayBuffer(blob);
+            }, 'image/jpeg', JPEG_QUALITY);
+        }
+
+        function startLoops() {
+            streaming = true;
+            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+                const cb = () => { if (streaming) { sendOneFrame(); videoEl.requestVideoFrameCallback(cb); } };
+                videoEl.requestVideoFrameCallback(cb);
+            } else {
+                const id = setInterval(() => { if (!streaming) { clearInterval(id); return; } sendOneFrame(); }, 10);
+            }
+            setInterval(() => {
+                txEl.textContent = sendCount; sendCount = 0;
+                rxEl.textContent = recvCount; recvCount = 0;
+                latEl.textContent = (lastLatency != null ? Math.round(lastLatency) : '—');
+            }, 1000);
+            drawLoop();
+        }
+
+        function drawLoop() {
+            const ctx = overlay.getContext('2d');
+            const draw = () => {
+                if (!streaming) return;
+                ctx.clearRect(0, 0, overlay.width, overlay.height);
+                const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+                if (!vw || !vh) { requestAnimationFrame(draw); return; }
+
+                const vwRatio = overlay.clientWidth / vw;
+                const vhRatio = overlay.clientHeight / vh;
+                const scale = Math.min(vwRatio, vhRatio);
+                const drawW = vw * scale, drawH = vh * scale;
+                const offX = (overlay.clientWidth - drawW) / 2;
+                const offY = (overlay.clientHeight - drawH) / 2;
+
+                ctx.save();
+                ctx.translate(offX, offY);
+                ctx.scale(scale, scale);
+                ctx.lineWidth = 2 / scale;
+                ctx.font = `${14 / scale}px ui-sans-serif`;
+                ctx.strokeStyle = '#00FF88';
+                ctx.fillStyle = 'rgba(0,0,0,0.45)';
+
+                for (const b of boxes) {
+                    const { x, y, w, h, label, conf } = b;
+                    const mx = vw - (x + w);
+                    ctx.beginPath();
+                    ctx.rect(mx, y, w, h);
+                    ctx.stroke();
+                    const tag = `${label ?? 'obj'} ${(conf * 100 | 0)}%`;
+                    const tw = ctx.measureText(tag).width + 8;
+                    const th = 18 / scale + 6;
+                    ctx.fillRect(mx, y - th, tw, th);
+                    ctx.fillStyle = '#00FF88';
+                    ctx.fillText(tag, mx + 4, y - 6 / scale);
+                    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+                }
+                ctx.restore();
+                requestAnimationFrame(draw);
+            };
+            requestAnimationFrame(draw);
+        }
+
+        (async () => {
+            await openCamera();
+            connectWS();
+            startLoops();
+        })();
+
+        // ปุ่ม "ไปยังข้อถัดไป" ไม่ต้องใช้งานแล้ว (ซ่อน)
+        nextGameBtn.style.display = "none";
+    </script>
+</body>
+
+</html>

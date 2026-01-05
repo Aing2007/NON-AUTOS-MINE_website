@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Intro — Video+BGM → detectchild</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            background: #000;
+            overflow: hidden;
+            -webkit-tap-highlight-color: transparent;
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+        }
+
+        body {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .stage {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+        }
+
+        video.bg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center center;
+            background: #000;
+        }
+
+        .hint {
+            position: fixed;
+            left: 50%;
+            bottom: 6%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, .9);
+            font-weight: 700;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, .55);
+            pointer-events: none;
+            font-size: clamp(12px, 3.2vw, 18px);
+        }
+
+        .badge {
+            position: fixed;
+            left: 12px;
+            top: 12px;
+            max-width: 88vw;
+            background: rgba(0, 0, 0, .45);
+            color: #fff;
+            padding: 8px 10px;
+            border-radius: 10px;
+            font-size: 12px;
+            line-height: 1.35;
+            border: 1px solid rgba(255, 255, 255, .15);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="stage" id="stage">
+        <!-- วิดีโอพื้นหลัง: พยายามเล่น MP4 ก่อน ถ้าไม่ได้ให้ลอง WEBM -->
+        <video id="bgVideo" class="bg" playsinline muted autoplay loop preload="auto" poster="">
+            <!-- ปรับพาธไฟล์ให้ตรงกับโปรเจ็กต์ของคุณ -->
+            <source src="nonloopface.mp4" type="video/mp4" />
+            <source src="nonloopface.mp4" type="video/webm" />
+        </video>
+
+        <!-- เสียงพื้นหลัง (เล่นวน) -->
+        <audio id="bgAudio" src="sound/background.mp3" preload="auto" loop></audio>
+
+        <div class="hint" id="hint">แตะหรือคลิกที่ไหนก็ได้เพื่อไปต่อ →</div>
+        <div class="badge" id="diag" style="display:none"></div>
+    </div>
+
+    <script>
+        const stageEl = document.getElementById('stage');
+        const videoEl = document.getElementById('bgVideo');
+        const audioEl = document.getElementById('bgAudio');
+        const diagEl = document.getElementById('diag');
+
+        // ===== helper: แสดงสถานะ/ข้อผิดพลาด บนมุมซ้ายบน =====
+        function showDiag(msg) {
+            diagEl.style.display = 'block';
+            diagEl.textContent = msg;
+        }
+
+        // บางแพลตฟอร์มจะยอม autoplay(video) ได้เพราะ muted แต่จะบล็อก audio จนกว่าจะคลิก
+        async function tryStartMedia() {
+            // วิดีโอ
+            try {
+                await videoEl.play();
+            } catch (e) {
+                showDiag('⚠️ วิดีโอ autoplay ไม่ได้ จะเริ่มหลังคลิกครั้งแรก');
+            }
+            // เสียง
+            try {
+                await audioEl.play();
+            } catch (e) {
+                showDiag((diagEl.textContent ? diagEl.textContent + ' | ' : '')
+                    + '🎧 เสียงจะเริ่มหลังคลิกครั้งแรก');
+            }
+        }
+
+        // ถ้าวิดีโอเล่นไม่ได้เพราะ codec/ไฟล์หาย ให้ใส่ข้อความชัด ๆ
+        function checkVideoHealth() {
+            // 1) ถ้าไม่มีแหล่งเล่นได้เลย
+            if (videoEl.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
+                showDiag('❌ หาไฟล์วิดีโอไม่เจอ หรือชนิดไฟล์ไม่รองรับ (ตรวจพาธ/นามสกุล)');
+                return;
+            }
+            // 2) ถ้ารอข้อมูลนาน/ยังไม่พร้อมแสดง
+            setTimeout(() => {
+                if (videoEl.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                    showDiag((diagEl.textContent ? diagEl.textContent + ' | ' : '')
+                        + '🕑 วิดีโอไม่พร้อม อาจเป็น codec ไม่รองรับ (ลองใช้ .webm)');
+                }
+            }, 1500);
+        }
+
+        // คลิกที่ไหนก็ได้ → เปิดเสียง (ถ้ายัง) แล้วไปหน้า detectchild.html
+        async function goNext() {
+            try { await videoEl.play(); } catch { }
+            try { await audioEl.play(); } catch { }
+            // เล็กน้อยให้ promise settle ก่อน
+            setTimeout(() => { window.location.href = 'detectchild.html'; }, 0);
+        }
+
+        // bind gesture ทั้งหน้า
+        ['click', 'pointerdown', 'touchstart', 'keydown'].forEach(ev =>
+            stageEl.addEventListener(ev, goNext, { passive: true, once: true })
+        );
+
+        // event วินิจฉัย
+        videoEl.addEventListener('error', () => {
+            showDiag('❌ วิดีโอเปิดไม่ได้ (error) — ตรวจพาธไฟล์และ codec (แนะนำ .webm)');
+        });
+        videoEl.addEventListener('loadedmetadata', () => {
+            // ถ้า metadata มา แต่อยู่จอดำ แสดงว่าเล่นอยู่แต่เฟรมแรกเป็นดำ หรือยัง play ไม่ได้
+            // ไม่แสดงข้อความใด ๆ เพื่อไม่รบกวน
+        });
+        videoEl.addEventListener('playing', () => {
+            // วิดีโอเริ่มเล่นได้ ปิดกล่อง diag ถ้าไม่จำเป็น
+            diagEl.style.display = 'none';
+        });
+
+        // เริ่มทำงาน
+        window.addEventListener('load', () => {
+            tryStartMedia();
+            checkVideoHealth();
+        });
+    </script>
+</body>
+
+</html>

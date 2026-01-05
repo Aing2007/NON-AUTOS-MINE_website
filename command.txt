@@ -1,0 +1,30 @@
+source .venv/bin/activate
+cd Backend
+uvicorn server_checkname:app --host 127.0.0.1 --port 8000 --reload
+uvicorn server_detectchild:app --host 127.0.0.1 --port 8001 --reload
+uvicorn server_playgame:app --host 127.0.0.1 --port 8002 --reload
+uvicorn server_checkgame:app --host 127.0.0.1 --port 8003 --reload
+ngrok http 8080
+
+
+cd Backend/RAGLLM
+uvicorn app:app --host 127.0.0.1 --port 8004 --reload
+
+8000 = เชคชื่อ (ws1)
+8001 = ตรวจจับผู้เข้าร่วม (ws2)
+8002 = ตรวจจับคน+หัวสสัตว์ ตอนเล่นเกม (ws3)
+8003 = รันโมเดล game_detecction ตรวจคำตอบ (ws4)
+8004 = LLM RAG
+
+
+
+##ใช้แบบนี้เมื่อต้องการรันทดสอบในเครื่อง แบบ port local
+const host = location.hostname; // localhost
+        const proto = location.protocol === "https:" ? "wss:" : "ws:";
+        const WS_URL = `${proto}//${host}:8001/ws`;
+->เปลี่ยนหมายเลขพอร์ต 8001....
+
+
+##ใช้แบบนี้ก็ต่อเมื่อต้องการรันเว้ปแบบออกนอกเครื่อง แบบ websocket
+const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws4';
+->เปลี่ยนช่อง WS1.....

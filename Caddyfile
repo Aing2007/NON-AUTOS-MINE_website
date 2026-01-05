@@ -1,0 +1,120 @@
+# =========================
+# Dev HTTP on :8080
+# =========================
+:8080 {
+	encode gzip
+
+	# ----- Static site -----
+	root * ./my-website/src
+	file_server
+
+	# ===== REST APIs =====
+	handle_path /api1/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle_path /api2/* {
+		reverse_proxy 127.0.0.1:8001
+	}
+	handle_path /api3/* {
+		reverse_proxy 127.0.0.1:8002
+	}
+	handle_path /api4/* {
+		reverse_proxy 127.0.0.1:8003
+	}
+
+	# ===== WebSockets =====
+	# ใช้ handle + rewrite แล้วค่อย reverse_proxy
+	handle /ws1 {
+		rewrite * /ws
+		reverse_proxy 127.0.0.1:8000 {
+			flush_interval -1
+		}
+	}
+	handle /ws2 {
+		rewrite * /ws
+		reverse_proxy 127.0.0.1:8001 {
+			flush_interval -1
+		}
+	}
+	handle /ws3 {
+		# ถ้าบริการที่พอร์ต 8002 ใช้ /vision/ws ให้สลับเป็นบรรทัดล่างนี้:
+		# rewrite * /vision/ws
+		rewrite * /ws
+		reverse_proxy 127.0.0.1:8002 {
+			flush_interval -1
+		}
+	}
+	handle /ws4 {
+		# WS ของบริการ checkgame @8003
+		rewrite * /ws
+		reverse_proxy 127.0.0.1:8003 {
+			flush_interval -1
+		}
+	}
+
+	# (ออปชัน) เฮดเดอร์ความปลอดภัยเบื้องต้น
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# (ออปชัน) เปิด access log ช่วยดีบัก
+	log {
+		output file logs/access.log
+		format console
+	}
+}
+
+# =========================
+# (ออปชัน) Dev HTTPS บน localhost:8443
+# ใช้ mkcert เท่านั้น: mkcert -install && mkcert localhost
+# แล้วแก้ path ใบรับรองด้านล่างให้ตรงไฟล์ที่ได้
+# =========================
+# :8443 {
+# 	encode gzip
+# 	tls /absolute/path/to/localhost.pem /absolute/path/to/localhost-key.pem
+#
+# 	root * ./my-website/src
+# 	file_server
+#
+# 	# REST
+# 	handle_path /api1/* {
+# 		reverse_proxy 127.0.0.1:8000
+# 	}
+# 	handle_path /api2/* {
+# 		reverse_proxy 127.0.0.1:8001
+# 	}
+# 	handle_path /api3/* {
+# 		reverse_proxy 127.0.0.1:8002
+# 	}
+# 	handle_path /api4/* {
+# 		reverse_proxy 127.0.0.1:8003
+# 	}
+#
+# 	# WebSockets
+# 	handle /ws1 {
+# 		rewrite * /ws
+# 		reverse_proxy 127.0.0.1:8000 {
+# 			flush_interval -1
+# 		}
+# 	}
+# 	handle /ws2 {
+# 		rewrite * /ws
+# 		reverse_proxy 127.0.0.1:8001 {
+# 			flush_interval -1
+# 		}
+# 	}
+# 	handle /ws3 {
+# 		# rewrite * /vision/ws
+# 		rewrite * /ws
+# 		reverse_proxy 127.0.0.1:8002 {
+# 			flush_interval -1
+# 		}
+# 	}
+# 	handle /ws4 {
+# 		rewrite * /ws
+# 		reverse_proxy 127.0.0.1:8003 {
+# 			flush_interval -1
+# 		}
+# 	}
+# }
